@@ -14,8 +14,9 @@ jobs:
   lint:
     name: lint (yamllint + ansible-lint + gitleaks + shellcheck)
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
 
@@ -43,27 +44,36 @@ jobs:
             exit 1
           fi
 
-      - name: yamllint
-        run: |
-          pip install --user yamllint==1.38.0
-          ~/.local/bin/yamllint .
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
+        with:
+          python-version: "3.12"
+          cache: pip
 
-      - name: Install ansible collections (so ansible-lint can resolve modules)
+      - name: Cache Ansible collections
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57  # v4.2.0
+        with:
+          path: ~/.ansible/collections
+          key: ansible-collections-${{ hashFiles('ansible/requirements.yml') }}
+
+      - name: Install ansible + yamllint + collections
         run: |
           core_version=$(cat .ansible-version)
-          pip install --user "ansible-core==${core_version}"
+          pip install --user "ansible-core==${core_version}" "yamllint==1.38.0"
           ~/.local/bin/ansible-galaxy collection install --force -r ansible/requirements.yml
 
-      - uses: ansible/ansible-lint@v26.4.0
+      - name: yamllint
+        run: ~/.local/bin/yamllint .
+
+      - uses: ansible/ansible-lint@5fac056c45595896c973fbde871f01f6cb14d74c  # v26.4.0
         with:
           args: "--profile=basic"
           working_directory: ansible
 
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: ludeeus/action-shellcheck@2.0.0
+      - uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38  # v2.0.0
         with:
           scandir: "./"
           severity: warning
@@ -71,8 +81,9 @@ jobs:
   docker-test:
     name: docker test harness (apply safe roles in Ubuntu 24 container)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Run tests/docker/test.sh apply
         run: ./tests/docker/test.sh apply
