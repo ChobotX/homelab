@@ -9,6 +9,23 @@
     group: root
     mode: "0755"
 
+- name: Check that admin user's authorized_keys exists and is non-empty
+  # Never tighten sshd without verifying a usable admin key is present —
+  # otherwise renaming admin_user or corrupting the file = lockout.
+  ansible.builtin.stat:
+    path: "/home/{{ admin_user }}/.ssh/authorized_keys"
+  register: admin_auth_keys
+
+- name: Refuse to continue without a valid admin authorized_keys file
+  ansible.builtin.assert:
+    that:
+      - admin_auth_keys.stat.exists
+      - admin_auth_keys.stat.size | int > 0
+    fail_msg: >
+      /home/{{ admin_user }}/.ssh/authorized_keys is missing or empty.
+      Run bootstrap.sh (or ansible-playbook with LAPTOP_PUBKEY set) before
+      applying ssh_hardening, otherwise you will be locked out after reload.
+
 - name: Remove bootstrap-stage sshd override (replaced by this role)
   ansible.builtin.file:
     path: /etc/ssh/sshd_config.d/00-bootstrap.conf
@@ -24,6 +41,11 @@
     mode: "0644"
     validate: /usr/sbin/sshd -t -f %s
   notify: Reload sshd
+
+# Flush reloads NOW, inside this role, so partial playbook failures between
+# here and the end-of-play never leave sshd with no drop-in at all.
+- name: Flush sshd handlers (apply immediately — don't defer to end of play)
+  ansible.builtin.meta: flush_handlers
 
 - name: Ensure ssh service is enabled
   ansible.builtin.systemd:

@@ -24,17 +24,34 @@
     mode: "0644"
     force: false
 
+- name: Read Docker GPG fingerprint
+  ansible.builtin.command: gpg --show-keys --with-fingerprint --with-colons /etc/apt/keyrings/docker.asc
+  register: docker_gpg_show
+  changed_when: false
+
+- name: Assert Docker GPG fingerprint matches the pinned value
+  # Refuse to install if the downloaded key doesn't match the expected
+  # fingerprint — blocks silent MITM or future compromise of Docker's key repo.
+  ansible.builtin.assert:
+    that:
+      - docker_gpg_fingerprint in (docker_gpg_show.stdout_lines | select('match', '^fpr:') | list | join('\n'))
+    fail_msg: |
+      Docker GPG fingerprint mismatch.
+      Expected: {{ docker_gpg_fingerprint }}
+      Found:    {{ docker_gpg_show.stdout_lines | select('match', '^fpr:') | list }}
+      Check https://docs.docker.com/engine/install/ubuntu/ and update defaults/main.yml.
+
 - name: Determine apt arch
   ansible.builtin.set_fact:
-    docker_apt_arch: >-
-      {{ ansible_architecture
-         | replace('x86_64', 'amd64')
-         | replace('aarch64', 'arm64') }}
+    docker_apt_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_architecture] | default(ansible_architecture) }}"
 
 - name: Add Docker apt repository
+  vars:
+    _docker_repo_url: "https://download.docker.com/linux/ubuntu"
+    _docker_repo_suite: "{{ ansible_distribution_release }} stable"
+    _docker_repo_opts: "arch={{ docker_apt_arch }} signed-by=/etc/apt/keyrings/docker.asc"
   ansible.builtin.apt_repository:
-    repo: "deb [arch={{ docker_apt_arch | trim }} signed-by=/etc/apt/keyrings/docker.asc]
-           https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    repo: "deb [{{ _docker_repo_opts }}] {{ _docker_repo_url }} {{ _docker_repo_suite }}"
     filename: docker
     state: present
     update_cache: true

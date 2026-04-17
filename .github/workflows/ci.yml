@@ -21,11 +21,25 @@ jobs:
 
       - name: Forbid mixed WG subnets (docs/code drift guard)
         run: |
+          # `tests/` uses an intentionally-different subnet to catch hardcoded
+          # values — exclude from the guard.
           conflicts=$(grep -rEho '10\.[0-9]+\.0\.0/24' \
-            --exclude-dir=.git --exclude-dir=node_modules . | sort -u | wc -l)
+            --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=tests . \
+            | sort -u | wc -l)
           if [ "$conflicts" -gt 1 ]; then
-            echo "::error::multiple WG subnets found in repo:"
-            grep -rEno '10\.[0-9]+\.0\.0/24' --exclude-dir=.git . | sort -u
+            echo "::error::multiple WG subnets found (non-test files):"
+            grep -rEno '10\.[0-9]+\.0\.0/24' \
+              --exclude-dir=.git --exclude-dir=tests . | sort -u
+            exit 1
+          fi
+
+      - name: Forbid unsafe triggers on self-hosted runner
+        # pull_request_target and workflow_run on a public repo + self-hosted
+        # runner are a known unauth-RCE vector. Refuse to merge workflows that
+        # introduce them.
+        run: |
+          if grep -rEn 'pull_request_target:|^[[:space:]]*workflow_run:' .github/workflows/; then
+            echo "::error::workflow uses pull_request_target or workflow_run — unsafe with a self-hosted runner"
             exit 1
           fi
 

@@ -36,15 +36,18 @@
       - restic_aws_access_key_id
       - restic_aws_secret_access_key
 
+  # pre_tasks are tagged `always` so they fire even with --tags <role>.
   pre_tasks:
     - name: Read host config from /etc/homelab/config.yml on target
       ansible.builtin.slurp:
         src: /etc/homelab/config.yml
       register: homelab_config_slurp
+      tags: [always]
 
     - name: Parse host config into a dict
       ansible.builtin.set_fact:
         homelab_config: "{{ homelab_config_slurp.content | b64decode | from_yaml }}"
+      tags: [always]
 
     - name: Apply each config key as a play var
       ansible.builtin.set_fact:
@@ -52,6 +55,7 @@
       loop: "{{ homelab_config | dict2items }}"
       loop_control:
         label: "{{ item.key }}"
+      tags: [always]
 
     - name: Read secret files from target (missing files are OK)
       ansible.builtin.slurp:
@@ -60,6 +64,7 @@
       register: homelab_secrets_slurp
       failed_when: false
       no_log: true
+      tags: [always]
 
     - name: Apply each secret as a play var (trim trailing newlines)
       ansible.builtin.set_fact:
@@ -69,12 +74,14 @@
         label: "{{ item.item }}"
       when: item.content is defined
       no_log: true
+      tags: [always]
 
     - name: Default any missing optional secrets to empty string
       ansible.builtin.set_fact:
         "{{ item }}": "{{ vars[item] | default('') }}"
       loop: "{{ homelab_secret_names }}"
       no_log: true
+      tags: [always]
 
   roles:
     - role: common

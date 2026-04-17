@@ -197,22 +197,15 @@ esac
 if [ "$SKIP_RUNNER" = "0" ]; then
   ASK GITHUB_REPO  "GitHub repo (owner/name)" "" valid_repo
 
-  note "Fine-grained PAT scoped to ${GITHUB_REPO} — Administration: r/w, Actions: r/w, Contents: read."
-  note "Used to auto-fetch runner registration tokens + dispatch first deploy."
-  note "Leave blank to fall back to pasting a registration token manually."
-  ASK_OPT GITHUB_TOKEN "GitHub PAT" 1
+  note "Fine-grained PAT scoped to ${GITHUB_REPO} — required for ephemeral JIT runner registration."
+  note "Permissions: Administration: r/w, Actions: r/w, Contents: read."
+  note "https://github.com/settings/personal-access-tokens/new"
+  ASK GITHUB_TOKEN "GitHub PAT" "" "" 1
 
   : "${GITHUB_RUNNER_VERSION:=2.321.0}"
   : "${GITHUB_RUNNER_USER:=gha-runner}"
-  : "${GITHUB_RUNNER_NAME:=$(hostname -s)}"
   : "${GITHUB_RUNNER_LABELS:=self-hosted,linux,homelab}"
   : "${GITHUB_RUNNER_DIR:=/opt/actions-runner}"
-
-  if [ -z "${GITHUB_TOKEN:-}" ]; then
-    note "generate a registration token with:"
-    note "  gh api -X POST /repos/${GITHUB_REPO}/actions/runners/registration-token --jq .token"
-    ASK GITHUB_RUNNER_TOKEN "paste the registration token" "" "" 1
-  fi
 fi
 
 echo
@@ -420,6 +413,14 @@ restic_sftp_host: "${RESTIC_SFTP_HOST}"
 restic_sftp_user: "${RESTIC_SFTP_USER}"
 EOF
 fi
+if [ "$SKIP_RUNNER" = "0" ]; then
+  cat >> /etc/homelab/config.yml <<EOF
+
+# Self-hosted runner identity — used by the JIT wrapper.
+github_repo: "${GITHUB_REPO}"
+github_runner_labels: "${GITHUB_RUNNER_LABELS}"
+EOF
+fi
 chmod 0644 /etc/homelab/config.yml
 
 write_secret() {
@@ -449,6 +450,7 @@ write_secret restic_b2_account_id         "${RESTIC_B2_ACCOUNT_ID:-}"
 write_secret restic_b2_account_key        "${RESTIC_B2_ACCOUNT_KEY:-}"
 write_secret restic_aws_access_key_id     "${RESTIC_AWS_ACCESS_KEY_ID:-}"
 write_secret restic_aws_secret_access_key "${RESTIC_AWS_SECRET_ACCESS_KEY:-}"
+[ "$SKIP_RUNNER" = "0" ] && write_secret github_pat "$GITHUB_TOKEN"
 ok "/etc/homelab/ populated"
 
 cat <<EOF
@@ -462,42 +464,18 @@ $(bold 'Save these somewhere safe — you will need them for first login:')
 EOF
 pause "Press Enter when you've recorded them"
 
-### ---------- phase 8: GitHub Actions runner ----------
-
-fetch_runner_token() {
-  [ -n "${GITHUB_TOKEN:-}" ] || return 1
-  local http
-  http=$(curl -sS -o /tmp/ghrt.json -w '%{http_code}' \
-    -X POST \
-    -H "Accept: application/vnd.github+json" \
-    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-    -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/repos/${GITHUB_REPO}/actions/runners/registration-token")
-  if [ "$http" = "201" ]; then
-    GITHUB_RUNNER_TOKEN="$(jq -r .token /tmp/ghrt.json)"
-    return 0
-  fi
-  warn "runner-token API returned HTTP $http: $(jq -r '.message // .' < /tmp/ghrt.json 2>/dev/null)"
-  return 1
-}
+### ---------- phase 8: GitHub Actions runner (ephemeral JIT) ----------
 
 if [ "$SKIP_RUNNER" = "1" ]; then
   warn "skipping runner install (--skip-runner)"
 else
-  step "Phase 8 — installing and registering self-hosted GitHub Actions runner"
-
-  if [ -n "${GITHUB_TOKEN:-}" ] && [ -z "${GITHUB_RUNNER_TOKEN:-}" ]; then
-    if fetch_runner_token; then
-      ok "fetched fresh runner registration token via PAT"
-    else
-      die "PAT given but runner-token fetch failed — check scopes (needs Administration: read+write on repo)"
-    fi
-  fi
-  [ -n "${GITHUB_RUNNER_TOKEN:-}" ] || die "no runner registration token available"
+  step "Phase 8 — installing ephemeral JIT self-hosted GitHub Actions runner"
 
   if ! id -u "$GITHUB_RUNNER_USER" >/dev/null 2>&1; then
     useradd -r -m -s /bin/bash "$GITHUB_RUNNER_USER"
   fi
+  # NOPASSWD:ALL is required for Ansible become. The wipe-per-job flow below
+  # bounds blast radius — the runner's workspace is deleted after each job.
   printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$GITHUB_RUNNER_USER" > "/etc/sudoers.d/91-${GITHUB_RUNNER_USER}"
   chmod 0440 "/etc/sudoers.d/91-${GITHUB_RUNNER_USER}"
   visudo -cf "/etc/sudoers.d/91-${GITHUB_RUNNER_USER}" >/dev/null
@@ -509,7 +487,7 @@ else
   esac
 
   install -d -o "$GITHUB_RUNNER_USER" -g "$GITHUB_RUNNER_USER" -m 0750 "$GITHUB_RUNNER_DIR"
-  if [ ! -x "$GITHUB_RUNNER_DIR/config.sh" ]; then
+  if [ ! -x "$GITHUB_RUNNER_DIR/run.sh" ]; then
     tarball="actions-runner-linux-${arch}-${GITHUB_RUNNER_VERSION}.tar.gz"
     url="https://github.com/actions/runner/releases/download/v${GITHUB_RUNNER_VERSION}/${tarball}"
     note "downloading $url"
@@ -520,24 +498,98 @@ else
   [ -x "$GITHUB_RUNNER_DIR/bin/installdependencies.sh" ] && \
     "$GITHUB_RUNNER_DIR/bin/installdependencies.sh" >/dev/null || true
 
-  if [ -s "$GITHUB_RUNNER_DIR/.runner" ]; then
-    note "runner already registered — skipping re-register"
-  else
-    sudo -u "$GITHUB_RUNNER_USER" \
-      "$GITHUB_RUNNER_DIR/config.sh" \
-        --unattended \
-        --url "https://github.com/${GITHUB_REPO}" \
-        --token "$GITHUB_RUNNER_TOKEN" \
-        --name "$GITHUB_RUNNER_NAME" \
-        --labels "$GITHUB_RUNNER_LABELS" \
-        --replace
+  # Give the runner user read access to the PAT (root:gha-runner 0440).
+  # config.yml is already 0644 — runner can read it.
+  chown "root:${GITHUB_RUNNER_USER}" /etc/homelab/secrets/github_pat
+  chmod 0440 /etc/homelab/secrets/github_pat
+
+  # JIT wrapper — fetches a one-shot JIT config from GitHub, then execs the
+  # runner. Runner exits after one job, systemd restarts us, we re-register.
+  install -d -m 0755 /opt/homelab/bin
+  cat > /opt/homelab/bin/gha-runner-jit.sh <<'WRAPPER'
+#!/usr/bin/env bash
+# Ephemeral JIT runner wrapper — one job per registration, no persistent state.
+set -euo pipefail
+umask 077
+
+CONFIG=/etc/homelab/config.yml
+PAT_FILE=/etc/homelab/secrets/github_pat
+RUNNER_DIR=/opt/actions-runner
+
+repo=$(awk -F'"' '/^github_repo:/ {print $2; exit}' "$CONFIG")
+labels=$(awk -F'"' '/^github_runner_labels:/ {print $2; exit}' "$CONFIG")
+[ -n "$repo" ] && [ -n "$labels" ] || { echo "config.yml missing github_repo or github_runner_labels" >&2; exit 1; }
+
+PAT=$(cat "$PAT_FILE")
+[ -n "$PAT" ] || { echo "$PAT_FILE empty" >&2; exit 1; }
+
+# Labels as JSON array
+IFS=',' read -ra lbl_arr <<<"$labels"
+lbl_json=$(printf '"%s",' "${lbl_arr[@]}")
+lbl_json="[${lbl_json%,}]"
+
+name="$(hostname -s)-$(date +%s)-$$"
+
+resp=$(curl -fsSL -X POST \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer $PAT" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  "https://api.github.com/repos/${repo}/actions/runners/generate-jitconfig" \
+  -d "{\"name\":\"$name\",\"runner_group_id\":1,\"labels\":$lbl_json,\"work_folder\":\"_work\"}")
+
+jit=$(printf '%s' "$resp" | jq -r '.encoded_jit_config // empty')
+if [ -z "$jit" ]; then
+  echo "JIT config fetch failed: $resp" >&2
+  exit 1
+fi
+
+# Wipe workspace between jobs — defence in depth against cross-job contamination.
+rm -rf "$RUNNER_DIR/_work" "$RUNNER_DIR/_diag" 2>/dev/null || true
+
+cd "$RUNNER_DIR"
+exec ./run.sh --jitconfig "$jit"
+WRAPPER
+  chmod 0755 /opt/homelab/bin/gha-runner-jit.sh
+
+  cat > /etc/systemd/system/gha-runner-jit.service <<EOF
+[Unit]
+Description=GitHub Actions ephemeral JIT runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${GITHUB_RUNNER_USER}
+Group=${GITHUB_RUNNER_USER}
+WorkingDirectory=${GITHUB_RUNNER_DIR}
+ExecStart=/opt/homelab/bin/gha-runner-jit.sh
+Restart=always
+RestartSec=5
+KillMode=process
+TimeoutStopSec=30
+# Narrow privileges outside the runner's work dir.
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=false
+# Runner workspace must be writable.
+ReadWritePaths=${GITHUB_RUNNER_DIR}
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  # Drop any pre-existing persistent registration service.
+  if systemctl list-units --type=service --no-legend | grep -q 'actions.runner\.'; then
+    note "found legacy persistent runner service — stopping + disabling"
+    for u in $(systemctl list-units --type=service --no-legend | awk '/actions\.runner\./ {print $1}'); do
+      systemctl stop "$u" 2>/dev/null || true
+      systemctl disable "$u" 2>/dev/null || true
+    done
   fi
 
-  if ! systemctl list-units --type=service --no-legend | grep -q 'actions.runner\.'; then
-    (cd "$GITHUB_RUNNER_DIR" && ./svc.sh install "$GITHUB_RUNNER_USER" >/dev/null)
-  fi
-  (cd "$GITHUB_RUNNER_DIR" && ./svc.sh start >/dev/null)
-  ok "runner registered + systemd service running"
+  systemctl daemon-reload
+  systemctl enable --now gha-runner-jit.service
+  ok "ephemeral JIT runner service active"
 fi
 
 ### ---------- phase 9: optional first-run trigger ----------

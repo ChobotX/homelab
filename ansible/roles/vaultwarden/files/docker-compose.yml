@@ -6,6 +6,13 @@ services:
     image: ${VAULTWARDEN_IMAGE}
     container_name: vaultwarden
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     env_file:
       - .env
     volumes:

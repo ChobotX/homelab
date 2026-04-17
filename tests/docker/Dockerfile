@@ -27,11 +27,15 @@ RUN mkdir -p /run/sshd \
  && ssh-keygen -A \
  && sed -i 's/^#\?UsePAM.*/UsePAM no/' /etc/ssh/sshd_config
 
-# Generic test admin user — decoupled from whatever `admin_user` is set to in
-# host_vars. test.sh overrides `admin_user=testadmin` for the test run.
+# Generic test admin user matching the config.yml stub in test.sh.
+# ssh_hardening role refuses to run without a populated authorized_keys file.
 RUN useradd -m -s /bin/bash -G sudo testadmin \
  && echo 'testadmin ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-testadmin \
- && chmod 0440 /etc/sudoers.d/90-testadmin
+ && chmod 0440 /etc/sudoers.d/90-testadmin \
+ && install -d -m 0700 -o testadmin -g testadmin /home/testadmin/.ssh \
+ && ssh-keygen -t ed25519 -N '' -f /tmp/testkey -C test >/dev/null \
+ && install -m 0600 -o testadmin -g testadmin /tmp/testkey.pub /home/testadmin/.ssh/authorized_keys \
+ && rm -f /tmp/testkey /tmp/testkey.pub
 
 VOLUME ["/sys/fs/cgroup", "/tmp", "/run", "/run/lock"]
 STOPSIGNAL SIGRTMIN+3

@@ -93,9 +93,21 @@ These must be set manually once.
 - Traefik ports bound to `${WG_IP}`, not `0.0.0.0`.
 - Docker GPG key fingerprint pinned + asserted during install.
 
+## Runner: ephemeral JIT
+
+The GitHub Actions runner registers via **JIT config** (single-use), not a persistent registration. On each job:
+
+1. A systemd service (`gha-runner-jit.service`) invokes `/opt/homelab/bin/gha-runner-jit.sh`.
+2. The wrapper reads `/etc/homelab/secrets/github_pat` + `github_repo` from `config.yml`.
+3. It POSTs to `/repos/<owner>/<repo>/actions/runners/generate-jitconfig` → gets a one-shot config.
+4. Wipes `_work` + `_diag` from prior run.
+5. Execs `./run.sh --jitconfig <cfg>` — runner processes one job, exits.
+6. systemd `Restart=always` → re-registers for the next job.
+
+Effect: no persistent runner ID, no stale workspace between jobs, no long-lived registration that can be hijacked. PAT never leaves the box.
+
 ## Deferred (intentionally)
 
-- **Ephemeral runner** — persistent registration for simplicity. Workspace cleaned per checkout.
 - **Per-service fail2ban** — only sshd jail today. Add Vaultwarden once logs warrant.
 - **auditd** — adds log volume; skipped until needed.
 - **WG hub IaC in this repo** — hub stays manual.

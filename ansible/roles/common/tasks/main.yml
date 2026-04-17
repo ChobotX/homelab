@@ -120,9 +120,11 @@
   ansible.builtin.apt:
     name: systemd-timesyncd
     state: present
+  when: ansible_virtualization_type not in ['docker', 'lxc', 'container']
 
 - name: Ensure NTP is active (systemd-timesyncd)
   ansible.builtin.systemd:
     name: systemd-timesyncd
     state: started
     enabled: true
+  when: ansible_virtualization_type not in ['docker', 'lxc', 'container']
