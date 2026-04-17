@@ -6,32 +6,27 @@
       - wireguard-tools
     state: present
 
-- name: Refuse to proceed without bootstrap-generated private key
+- name: Ensure bootstrap-generated private key exists
+  # The key is generated ONCE on the homelab console by bootstrap.sh. Ansible
+  # reads it but never regenerates — rotation is an explicit scripts/rotate-wg-key.sh.
   ansible.builtin.stat:
     path: /etc/wireguard/privatekey
   register: wireguard_privkey_stat
 
-- name: Fail if private key is missing
-  ansible.builtin.fail:
-    msg: >
-      /etc/wireguard/privatekey is missing. bootstrap.sh must run on the homelab
-      console first (it generates the keypair). Ansible never regenerates the key.
-  when: not wireguard_privkey_stat.stat.exists
+- name: Refuse to proceed without a WG private key
+  ansible.builtin.assert:
+    that:
+      - wireguard_privkey_stat.stat.exists
+      - wireguard_privkey_stat.stat.size | int > 0
+    fail_msg: >
+      /etc/wireguard/privatekey is missing or empty. Run bootstrap.sh on the
+      homelab console first — it generates the keypair.
 
-- name: Read WG private key (never regenerated here)
+- name: Read WG private key
   ansible.builtin.slurp:
     src: /etc/wireguard/privatekey
   register: wireguard_privkey_content
   no_log: true
-
-- name: Read WG public key (so roles / reports can reference it)
-  ansible.builtin.slurp:
-    src: /etc/wireguard/publickey
-  register: wireguard_pubkey_content
-
-- name: Expose WG pubkey as a host fact
-  ansible.builtin.set_fact:
-    wireguard_pubkey: "{{ (wireguard_pubkey_content.content | b64decode).strip() }}"
 
 - name: Check for WG preshared key
   ansible.builtin.stat:

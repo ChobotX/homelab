@@ -23,10 +23,6 @@
     name: proxy
     state: present
 
-- name: Compute WG IPv4 address (without CIDR) for port binding
-  ansible.builtin.set_fact:
-    traefik_wireguard_ip: "{{ wireguard_address.split('/')[0] }}"
-
 - name: Template traefik.yml (static config)
   ansible.builtin.template:
     src: traefik.yml.j2

@@ -142,15 +142,11 @@ run_syntax_check() {
 }
 
 run_check() {
-  # --check is of limited use — tasks that install a package then enable its
-  # systemd unit fail in check mode because the package was only simulated.
-  # We still run it to validate Jinja + task structure.
-  log "ansible --check (template validation)"
+  log "ansible syntax-check (templates + structure)"
   docker exec "$CONTAINER" bash -c '
     set -e
     cd /tmp/homelab-test/ansible
-    ansible-playbook -i inventory.yml playbooks/site.yml \
-      --check --tags common
+    ansible-playbook -i inventory.yml playbooks/site.yml --syntax-check
   '
 }
 

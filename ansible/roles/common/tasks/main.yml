@@ -27,6 +27,7 @@
     mode: "0755"
 
 - name: Drop journald override with retention caps
+  # Storage=persistent is Ubuntu 24 default — only size / retention are our policy.
   ansible.builtin.copy:
     dest: /etc/systemd/journald.conf.d/retention.conf
     mode: "0644"
@@ -36,14 +37,12 @@
       [Journal]
       SystemMaxUse={{ journald_system_max_use }}
       MaxRetentionSec={{ journald_max_retention_sec }}
-      Storage=persistent
   notify: Restart journald
 
 - name: Install unattended-upgrades
   ansible.builtin.apt:
-    name:
-      - unattended-upgrades
-      - apt-listchanges
+    name: "{{ ['unattended-upgrades']
+              + (['apt-listchanges'] if unattended_upgrades_mail | length > 0 else []) }}"
     state: present
 
 - name: Configure unattended-upgrades
@@ -64,21 +63,6 @@
       APT::Periodic::Update-Package-Lists "1";
       APT::Periodic::Unattended-Upgrade "1";
       APT::Periodic::AutocleanInterval "7";
-
-- name: Pin packages against major upgrades via unattended-upgrades
-  ansible.builtin.copy:
-    dest: /etc/apt/preferences.d/10-homelab-pins
-    mode: "0644"
-    owner: root
-    group: root
-    content: |
-      # Managed by Ansible — prevents unattended auto-upgrades on these.
-      # Manual `apt upgrade` still works; only unattended is blocked.
-      {% for pkg in apt_pinned_packages %}
-      Package: {{ pkg }}
-      Pin: release *
-      Pin-Priority: 500
-      {% endfor %}
 
 - name: Apply baseline sysctl hardening
   ansible.posix.sysctl:
