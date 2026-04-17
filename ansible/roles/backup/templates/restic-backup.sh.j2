@@ -28,3 +28,12 @@ restic forget \
 
 # Fast integrity check (structure only; full reads weekly via --read-data-subset).
 restic check
+
+# Publish completion timestamp for Prometheus (scraped by Alloy's node_exporter textfile collector).
+tmp=/var/lib/node_exporter/textfile/restic.prom.$$
+cat > "$tmp" <<PROM
+# HELP restic_last_backup_timestamp_seconds Unix timestamp of last successful restic run.
+# TYPE restic_last_backup_timestamp_seconds gauge
+restic_last_backup_timestamp_seconds $(date +%s)
+PROM
+mv "$tmp" /var/lib/node_exporter/textfile/restic.prom

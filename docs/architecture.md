@@ -16,9 +16,17 @@ Single-node homelab behind WireGuard. Ansible applies roles via a self-hosted Gi
                          +-----------------+    +-----------+
                          | homelab         |<-- laptop (WG peer)
                          | Ubuntu + docker |<-- phone / other peers
-                         | Traefik, Vault. |
+                         | Traefik, Vault. |<-- HomeAssistant (scraped + syslog)
+                         | LGTMT stack     |
                          | WG 10.8.0.6     |
                          +-----------------+
+
+ observability flow:
+   Traefik --OTLP-->   Tempo   (traces)
+   Alloy   --scrape--> Prometheus (host, container, Traefik metrics)
+   Alloy   --push-->   Loki    (journald, docker, auth, traefik JSON, syslog from HA)
+   Prometheus --fire--> Alertmanager --SMTP--> email
+   Grafana (only public-reachable observability service; wg-only middleware)
 ```
 
 - **Laptop**: writes code, pushes to GitHub. Reaches the homelab over WG only (no public IP).
@@ -36,9 +44,10 @@ Single-node homelab behind WireGuard. Ansible applies roles via a self-hosted Gi
 4. **ssh_hardening** — key-only, modern crypto, `AllowUsers`, no forwarding. Runs AFTER ufw so tightening sshd can't land before the allow rule
 5. **fail2ban** — sshd jail, bans via ufw
 6. **docker** — Engine + Compose plugin from upstream apt repo, GPG fingerprint asserted
-7. **traefik** — reverse proxy bound to WG IP, Cloudflare DNS-01 ACME
-8. **vaultwarden** — behind Traefik, hardened container (cap_drop ALL, read-only rootfs)
-9. **backup** — restic systemd timer (03:00 daily)
+7. **observability** — Grafana + Prometheus + Loki + Tempo + Alertmanager + Alloy (creates the `observability` network before Traefik so OTLP is reachable)
+8. **traefik** — reverse proxy bound to WG IP, Cloudflare DNS-01 ACME, OTLP → tempo, JSON access log with traceID
+9. **vaultwarden** — behind Traefik, hardened container (cap_drop ALL, read-only rootfs)
+10. **backup** — restic systemd timer (03:00 daily)
 
 `meta/main.yml` dependencies mean `--tags ssh` still pulls `ufw` first, so you can't accidentally tighten sshd before the firewall allows you in.
 
@@ -51,6 +60,14 @@ Single-node homelab behind WireGuard. Ansible applies roles via a self-hosted Gi
 **Backups** push to whatever backend `restic_repo_url` points at (SFTP / B2 / S3). `/etc/homelab/secrets/` itself is in `backup_paths`, so a restored box can re-read its own credentials.
 
 **Certs** issue via Cloudflare DNS-01 — Traefik calls the CF API with a scoped token from `/etc/homelab/secrets/cloudflare_dns01_token`. Storage: `/opt/traefik/letsencrypt/acme.json` (mode 0600, root).
+
+**Observability** — everything flows into one Grafana pane:
+
+- **Metrics**: Alloy runs host/container exporters, remote-writes to Prometheus. Prometheus scrapes Traefik, self, and optional Home Assistant. Retention 30d, filesystem storage.
+- **Logs**: Alloy ships systemd journal, docker container stdout/stderr, `/var/log/auth.log`, `/var/log/fail2ban.log`, and a syslog listener (tcp/udp 514 bound to WG IP for HA + future peers) to Loki. Retention 14d. Traefik JSON access logs get parsed so `traceID` is extracted as structured metadata.
+- **Traces**: Traefik emits OTLP spans to Tempo (7d retention). Grafana's Loki datasource derives `TraceID` as a clickable field → jumps to the full trace.
+- **Alerts**: Prometheus evaluates rules from `ansible/roles/observability/files/alert-rules.yml`, fires to Alertmanager, Alertmanager routes to SMTP email (optional).
+- **Dashboards + datasources + alert rules** are all committed files; `allowUiUpdates: false` means Grafana UI "Save" is a no-op on restart. To change a dashboard: edit in UI → export JSON → commit → deploy.
 
 ## Runner — ephemeral JIT
 

@@ -6,6 +6,8 @@ backup_timer_oncalendar: "*-*-* 03:00:00"
 backup_paths:
   - /opt/vaultwarden/data
   - /opt/traefik/letsencrypt
+  - /opt/observability/data/grafana
+  - /opt/observability/data/alertmanager
   - /etc/wireguard
   - /etc/ssh
   - "/home/{{ admin_user }}"

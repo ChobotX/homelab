@@ -1,0 +1,12 @@
+---
+dependencies:
+  - role: docker
+galaxy_info:
+  role_name: observability
+  author: chobotx
+  description: Grafana + Loki + Prometheus + Tempo + Alertmanager + Alloy
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]

@@ -19,7 +19,7 @@ sudo ufw status | grep -q "Status: active"      || fail "ufw not active"
 ok "ufw active"
 
 # Containers — check they exist AND are healthy.
-for name in traefik vaultwarden; do
+for name in traefik vaultwarden grafana prometheus loki tempo alertmanager alloy; do
   docker ps --format '{{.Names}}' | grep -q "^${name}$" || fail "container $name not running"
   health=$(docker inspect -f '{{.State.Health.Status}}' "$name" 2>/dev/null || echo "none")
   case "$health" in
@@ -50,5 +50,29 @@ ok "acme.json mode 600"
 systemctl is-enabled --quiet restic-backup.timer \
   || fail "restic-backup.timer not enabled"
 ok "restic-backup.timer enabled"
+
+# Observability stack sanity.
+if command -v openssl >/dev/null; then
+  issuer=$(openssl s_client -connect "127.0.0.1:443" \
+    -servername "grafana.${domain}" </dev/null 2>/dev/null \
+    | openssl x509 -noout -issuer 2>/dev/null || true)
+  [ -n "$issuer" ] || fail "TLS handshake to grafana.${domain} failed"
+  echo "$issuer" | grep -qiE "let's encrypt|r[0-9]" \
+    || fail "grafana.${domain} serving non-LE cert: $issuer"
+  ok "grafana.${domain} serves LE cert"
+fi
+
+docker exec prometheus wget -qO- http://localhost:9090/-/ready 2>/dev/null | grep -qi "ready" \
+  || fail "prometheus not ready"
+ok "prometheus ready"
+
+targets_up=$(docker exec prometheus wget -qO- 'http://localhost:9090/api/v1/targets?state=active' 2>/dev/null \
+  | grep -c '"health":"up"' || true)
+[ "${targets_up:-0}" -ge 1 ] || fail "no prometheus targets up"
+ok "prometheus targets up (${targets_up})"
+
+docker exec alertmanager wget -qO- http://localhost:9093/-/ready 2>/dev/null \
+  || fail "alertmanager not ready"
+ok "alertmanager ready"
 
 ok "all smoke checks passed"

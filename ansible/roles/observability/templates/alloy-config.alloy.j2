@@ -1,0 +1,188 @@
+// Managed by Ansible.
+// Collects host metrics, container metrics, journal + file + docker + syslog logs.
+// Ships metrics via remote_write to Prometheus, logs via push to Loki.
+
+logging {
+  level  = "warn"
+  format = "logfmt"
+}
+
+// ---------------- METRICS ----------------
+
+prometheus.exporter.unix "host" {
+  include_exporter_metrics = false
+  rootfs_path              = "/host/rootfs"
+  procfs_path              = "/host/proc"
+  sysfs_path               = "/host/sys"
+  textfile {
+    directory = "/var/lib/node_exporter/textfile"
+  }
+}
+
+prometheus.exporter.cadvisor "containers" {
+  docker_host = "unix:///var/run/docker.sock"
+  storage_duration = "5m"
+}
+
+prometheus.scrape "host_metrics" {
+  targets    = prometheus.exporter.unix.host.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+  job_name   = "node"
+}
+
+prometheus.scrape "container_metrics" {
+  targets    = prometheus.exporter.cadvisor.containers.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+  job_name   = "cadvisor"
+}
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}
+
+// ---------------- LOGS ----------------
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// systemd journal
+loki.source.journal "journal" {
+  max_age       = "12h"
+  path          = "/var/log/journal"
+  relabel_rules = loki.relabel.journal.rules
+  forward_to    = [loki.write.default.receiver]
+  labels        = {
+    job  = "journal",
+    host = "{{ inventory_hostname }}",
+  }
+}
+
+loki.relabel "journal" {
+  forward_to = []
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+}
+
+// docker container stdout/stderr
+discovery.docker "containers" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "15s"
+}
+
+discovery.relabel "docker" {
+  targets = discovery.docker.containers.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker.output
+  forward_to = [loki.write.default.receiver]
+  labels     = {
+    job  = "docker",
+    host = "{{ inventory_hostname }}",
+  }
+}
+
+// Traefik JSON access log — parse, extract traceID as structured metadata.
+local.file_match "traefik_access" {
+  path_targets = [{ __path__ = "/host/opt/traefik/logs/access.log" }]
+}
+
+loki.source.file "traefik_access" {
+  targets    = local.file_match.traefik_access.targets
+  forward_to = [loki.process.traefik.receiver]
+}
+
+loki.process "traefik" {
+  stage.json {
+    expressions = {
+      traceID    = "OtelTraceID",
+      requestID  = "RequestID",
+      status     = "DownstreamStatus",
+      method     = "RequestMethod",
+      host       = "RequestHost",
+      path       = "RequestPath",
+    }
+  }
+  stage.labels {
+    values = {
+      job     = "",
+      service = "",
+      host    = "",
+      status  = "",
+      method  = "",
+    }
+  }
+  stage.structured_metadata {
+    values = {
+      traceID   = "",
+      requestID = "",
+      path      = "",
+    }
+  }
+  stage.static_labels {
+    values = {
+      job     = "traefik",
+      service = "traefik",
+    }
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+// auth.log + fail2ban.log
+local.file_match "auth_logs" {
+  path_targets = [
+    { __path__ = "/var/log/auth.log",     job = "auth" },
+    { __path__ = "/var/log/fail2ban.log", job = "fail2ban" },
+  ]
+}
+
+loki.source.file "auth_logs" {
+  targets    = local.file_match.auth_logs.targets
+  forward_to = [loki.write.default.receiver]
+}
+
+// Syslog listener for HA + future peers (UDP + TCP on WG IP only — port-publish handles that).
+loki.source.syslog "peers" {
+  listener {
+    address       = "0.0.0.0:514"
+    protocol      = "udp"
+    idle_timeout  = "60s"
+    labels        = { job = "syslog" }
+  }
+  listener {
+    address       = "0.0.0.0:514"
+    protocol      = "tcp"
+    idle_timeout  = "60s"
+    labels        = { job = "syslog" }
+  }
+  forward_to = [loki.process.syslog.receiver]
+}
+
+loki.process "syslog" {
+  stage.labels {
+    values = {
+      host     = "",
+      severity = "",
+      facility = "",
+      app      = "",
+    }
+  }
+  forward_to = [loki.write.default.receiver]
+}

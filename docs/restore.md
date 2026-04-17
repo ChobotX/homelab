@@ -46,7 +46,10 @@ sudo -E restic restore latest --target /
 sudo chmod 0600 /opt/traefik/letsencrypt/acme.json
 sudo chmod 0600 /etc/wireguard/wg0.conf /etc/wireguard/privatekey
 sudo chown -R root:root /opt/traefik /opt/vaultwarden
+sudo chown -R 472:472 /opt/observability/data/grafana      # Grafana UID
 ```
+
+Metrics/logs/traces (`data/prometheus`, `data/loki`, `data/tempo`) are **not** in the backup — they rebuild from scratch after redeploy. Grafana dashboards, datasources, and alert rules come back immediately via provisioning from the committed repo.
 
 ## Step 5 — Ansible converge
 

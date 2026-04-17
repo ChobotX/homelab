@@ -35,6 +35,9 @@ Written by `bootstrap.sh`; loaded into the play via `slurp` + `set_fact` at run 
 | `wireguard_peer_hub_allowedips` | What routes through the hub (usually the full VPN subnet) |
 | `restic_repo_url` | Restic repo URL (`sftp:...`, `b2:...`, `s3:...`) |
 | `restic_sftp_host` / `_user` | SFTP host + user (only when using SFTP backend) |
+| `homeassistant_host` | Optional — HA `host:port` to scrape `/api/prometheus` (e.g. `10.8.0.5:8123`) |
+| `alertmanager_smtp_host` | Optional — SMTP relay `host:port` for email alerts |
+| `alertmanager_smtp_from` / `_email_to` | From + destination for alert emails |
 
 ## Secrets (`/etc/homelab/secrets/<name>`)
 
@@ -47,6 +50,9 @@ One file per secret, mode 0400 root:root. Generated or prompted during bootstrap
 | `traefik_dashboard_basicauth` | Generated from prompted plaintext password (bcrypt via `htpasswd`) |
 | `restic_password` | Generated if absent (48 chars) |
 | `restic_sftp_private_key` | Generated on box; pubkey printed for you to install on the SFTP provider |
+| `grafana_admin_password` | Generated if absent (32 chars) — Grafana `admin` login |
+| `alertmanager_smtp_password` | Prompted, optional — SMTP password (skip = no email alerts) |
+| `homeassistant_metrics_token` | Prompted, optional — HA long-lived access token (skip = no HA scrape) |
 | `restic_sftp_known_hosts` | Populated via `ssh-keyscan` of the SFTP host |
 | `restic_b2_account_id` / `_key` | Prompted — only if using B2 backend |
 | `restic_aws_access_key_id` / `_secret_access_key` | Prompted — only if using S3 backend |
@@ -64,6 +70,7 @@ One file per secret, mode 0400 root:root. Generated or prompted during bootstrap
 - **traefik** — image tag, cert resolver name, dashboard host
 - **vaultwarden** — image tag, service host, signup/invitation policy
 - **backup** — timer calendar, paths, excludes, retention counts
+- **observability** — image tags for 6 containers, retention (Prom 30d / Loki 14d / Tempo 7d), memory caps, UIDs, optional HA + SMTP toggles
 
 ## Globals (`ansible/group_vars/all.yml`)
 

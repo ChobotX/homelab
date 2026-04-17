@@ -1,0 +1,165 @@
+---
+- name: Ensure /opt/observability layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/observability
+    - /opt/observability/data
+    - /opt/observability/data/alertmanager
+    - /opt/observability/data/alloy
+    - /opt/observability/grafana
+    - /opt/observability/grafana/provisioning
+    - /opt/observability/grafana/provisioning/datasources
+    - /opt/observability/grafana/provisioning/dashboards
+    - /opt/observability/grafana/dashboards
+
+- name: Ensure Grafana data dir (owned by Grafana UID)
+  ansible.builtin.file:
+    path: /opt/observability/data/grafana
+    state: directory
+    owner: "{{ grafana_uid }}"
+    group: "{{ grafana_gid }}"
+    mode: "0755"
+
+- name: Ensure Prometheus data dir (owned by nobody/nogroup)
+  ansible.builtin.file:
+    path: /opt/observability/data/prometheus
+    state: directory
+    owner: "{{ prometheus_uid }}"
+    group: "{{ prometheus_gid }}"
+    mode: "0755"
+
+- name: Ensure Loki data dir (owned by loki UID)
+  ansible.builtin.file:
+    path: /opt/observability/data/loki
+    state: directory
+    owner: "{{ loki_uid }}"
+    group: "{{ loki_gid }}"
+    mode: "0755"
+
+- name: Ensure Tempo data dir (owned by tempo UID)
+  ansible.builtin.file:
+    path: /opt/observability/data/tempo
+    state: directory
+    owner: "{{ tempo_uid }}"
+    group: "{{ tempo_gid }}"
+    mode: "0755"
+
+- name: Create shared observability network
+  community.docker.docker_network:
+    name: "{{ observability_network }}"
+    state: present
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/observability/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart observability stack
+
+- name: Template Prometheus config
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /opt/observability/prometheus.yml
+    owner: root
+    group: root
+    mode: "0644"
+  no_log: true
+  notify: Restart observability stack
+
+- name: Deploy Prometheus alert rules
+  ansible.builtin.copy:
+    src: alert-rules.yml
+    dest: /opt/observability/alert-rules.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart observability stack
+
+- name: Deploy Loki config
+  ansible.builtin.copy:
+    src: loki-config.yml
+    dest: /opt/observability/loki-config.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart observability stack
+
+- name: Deploy Tempo config
+  ansible.builtin.copy:
+    src: tempo-config.yml
+    dest: /opt/observability/tempo-config.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart observability stack
+
+- name: Template Alertmanager config
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: /opt/observability/alertmanager.yml
+    owner: root
+    group: root
+    mode: "0644"
+  no_log: true
+  notify: Restart observability stack
+
+- name: Template Alloy config
+  ansible.builtin.template:
+    src: alloy-config.alloy.j2
+    dest: /opt/observability/alloy-config.alloy
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart observability stack
+
+- name: Template Grafana datasources provisioning
+  ansible.builtin.template:
+    src: grafana-datasources.yml.j2
+    dest: /opt/observability/grafana/provisioning/datasources/datasources.yml
+    owner: root
+    group: "{{ grafana_gid }}"
+    mode: "0640"
+  notify: Restart observability stack
+
+- name: Template Grafana dashboards provisioning
+  ansible.builtin.template:
+    src: grafana-dashboards.yml.j2
+    dest: /opt/observability/grafana/provisioning/dashboards/dashboards.yml
+    owner: root
+    group: "{{ grafana_gid }}"
+    mode: "0640"
+  notify: Restart observability stack
+
+- name: Sync dashboard JSONs
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: /opt/observability/grafana/dashboards/
+    owner: root
+    group: "{{ grafana_gid }}"
+    mode: "0640"
+  with_fileglob:
+    - "dashboards/*.json"
+  notify: Restart observability stack
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/observability/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart observability stack
+
+- name: Bring up observability stack
+  community.docker.docker_compose_v2:
+    project_src: /opt/observability
+    state: present
+    pull: policy

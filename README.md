@@ -10,6 +10,7 @@ IaC for a single-node homelab server. Reachable only via WireGuard VPN (hub live
 - **Docker + Compose** — application services
 - **Traefik** — reverse proxy, Let's Encrypt via Cloudflare DNS-01
 - **Vaultwarden** — self-hosted Bitwarden (runtime/personal secrets)
+- **Observability** — Grafana + Prometheus + Loki + Tempo + Alertmanager + Alloy (logs, metrics, traces, alerts for this host + Home Assistant on the VPN)
 - **restic** — encrypted offsite backups
 
 ## Design

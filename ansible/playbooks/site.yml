@@ -8,7 +8,8 @@
 #   ssh_hardening  → final sshd config
 #   fail2ban       → needs sshd + ufw
 #   docker         → engine + compose + daemon.json
-#   traefik        → reverse proxy, bound to wg0 IP, Cloudflare DNS-01
+#   observability  → LGTMT stack (runs before traefik so `observability` network exists)
+#   traefik        → reverse proxy, bound to wg0 IP, Cloudflare DNS-01, OTLP → tempo
 #   vaultwarden    → secret vault behind Traefik
 #   backup         → restic systemd timer (last, so backup sees steady state)
 
@@ -35,6 +36,9 @@
       - restic_b2_account_key
       - restic_aws_access_key_id
       - restic_aws_secret_access_key
+      - grafana_admin_password
+      - alertmanager_smtp_password
+      - homeassistant_metrics_token
 
   # pre_tasks are tagged `always` so they fire even with --tags <role>.
   pre_tasks:
@@ -96,6 +100,8 @@
       tags: [fail2ban, hardening]
     - role: docker
       tags: [docker]
+    - role: observability
+      tags: [observability, services]
     - role: traefik
       tags: [traefik, proxy]
     - role: vaultwarden

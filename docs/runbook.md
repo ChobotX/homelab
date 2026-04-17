@@ -42,6 +42,50 @@ docker compose -f /opt/traefik/docker-compose.yml pull && \
   docker compose -f /opt/traefik/docker-compose.yml up -d
 ```
 
+## Dashboards — add or change
+
+Everything in Grafana is provisioned from committed files. UI "Save" is a no-op on restart.
+
+**Add a dashboard:**
+1. In Grafana UI, build and test it.
+2. Share → Export → "Export for sharing externally" = OFF → Save to file.
+3. Commit the JSON to `ansible/roles/observability/files/dashboards/<name>.json`.
+4. `git push` — next deploy renders it under the *Homelab* folder.
+
+**Change a dashboard:** same as above, overwrite the existing JSON.
+
+Alert rules are the same story but under `ansible/roles/observability/files/alert-rules.yml`.
+
+## Grafana — login
+
+URL: `https://grafana.<homelab_domain>`. Username `admin`, password in `/etc/homelab/secrets/grafana_admin_password`.
+
+Over WG only (`wg-only@file` middleware rejects anything outside the VPN subnet).
+
+```bash
+# Rotate admin password
+sudo install -m 0400 -T <(openssl rand -base64 24) /etc/homelab/secrets/grafana_admin_password
+gh workflow run deploy.yml --ref main -f tags=observability
+```
+
+## Home Assistant — ship logs + metrics
+
+**Metrics**: on the HA box, create a Long-Lived Access Token (Profile → Security → Long-Lived Access Tokens). Put it in `/etc/homelab/secrets/homeassistant_metrics_token` on the homelab, and add `homeassistant_host: "10.8.0.5:8123"` to `/etc/homelab/config.yml`. Prometheus scrape kicks in on next deploy.
+
+**Logs**: add to HA's `configuration.yaml`:
+
+```yaml
+logger:
+  default: info
+syslog:
+  host: 10.8.0.6
+  port: 514
+  protocol: udp
+  facility: local0
+```
+
+Loki receives via Alloy's syslog listener on the WG IP. Query: `{job="syslog"}` in Grafana's Loki datasource.
+
 ## Firewall (UFW) — check
 
 ```bash
@@ -103,6 +147,33 @@ To stop the runner completely (e.g. suspected compromise):
 ```bash
 sudo systemctl stop gha-runner-jit.service
 sudo systemctl disable gha-runner-jit.service
+```
+
+## Observability — logs, metrics, traces, alerts
+
+Everything is in Grafana at `https://grafana.<homelab_domain>`.
+
+| Question | Where to look |
+|---|---|
+| "Is the host OK?" | Home dashboard (CPU / Mem / Disk stats at top) |
+| "Which containers are heavy right now?" | Home dashboard → Container CPU / Memory panels |
+| "What did Vaultwarden log at 02:17?" | Explore → Loki → `{container="vaultwarden"}` |
+| "Show me every 5xx Traefik served today" | Explore → Loki → `{job="traefik"} \| json \| status >= 500` |
+| "Why was that request slow?" | Click any Traefik log → `TraceID` derived field → Tempo trace |
+| "Is Home Assistant alive?" | `up{job="homeassistant"}` in Prometheus |
+| "What's currently alerting?" | Grafana → Alerting menu (reads from Alertmanager) |
+
+CLI:
+```bash
+# Alert state
+curl -s http://localhost:9093/api/v2/alerts | jq '.[] | {alertname: .labels.alertname, state: .status.state}'
+
+# Silence something for 2h
+amtool alert add --alertmanager.url=http://localhost:9093 silence \
+  --comment="investigating" --duration=2h alertname=HostHighCpuLoad
+
+# Prometheus quick query
+curl -sG http://localhost:9090/api/v1/query --data-urlencode 'query=up' | jq
 ```
 
 ## SSH — reload the hardened config safely

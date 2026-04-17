@@ -20,6 +20,14 @@
     group: root
     mode: "0700"
 
+- name: Ensure node_exporter textfile collector directory
+  ansible.builtin.file:
+    path: /var/lib/node_exporter/textfile
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Deploy restic environment file (repo URL + credentials + password)
   ansible.builtin.template:
     src: restic.env.j2

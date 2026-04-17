@@ -157,7 +157,7 @@ run_apply_safe() {
     cd /tmp/homelab-test/ansible
     ansible-playbook -i inventory.yml playbooks/site.yml \
       --tags common,ssh,hardening,docker,fail2ban \
-      --skip-tags wireguard,ufw,traefik,vaultwarden,backup
+      --skip-tags wireguard,ufw,traefik,vaultwarden,backup,observability
   '
 
   log "post-apply sanity checks"

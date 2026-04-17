@@ -6,7 +6,16 @@ global:
 log:
   level: INFO
 
-accessLog: {}
+accessLog:
+  format: json
+  filePath: /var/log/traefik/access.log
+  fields:
+    defaultMode: keep
+    headers:
+      defaultMode: drop
+      names:
+        X-Request-Id: keep
+        User-Agent: keep
 
 api:
   dashboard: true
@@ -16,9 +25,24 @@ api:
 ping:
   entryPoint: ping
 
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addRoutersLabels: true
+    addServicesLabels: true
+
+tracing:
+  otlp:
+    http:
+      endpoint: http://tempo:4318/v1/traces
+  serviceName: traefik
+  sampleRate: 1.0
+
 entryPoints:
   ping:
     address: ":8082"
+  metrics:
+    address: ":8083"
   web:
     address: ":80"
     http:

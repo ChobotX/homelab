@@ -25,8 +25,10 @@ services:
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
       - ./dynamic:/etc/traefik/dynamic:ro
       - ./letsencrypt:/letsencrypt
+      - ./logs:/var/log/traefik
     networks:
       - proxy
+      - observability
     labels:
       traefik.enable: "true"
       # Dashboard router (HTTPS only, behind basic auth).
@@ -39,4 +41,6 @@ services:
 
 networks:
   proxy:
+    external: true
+  observability:
     external: true

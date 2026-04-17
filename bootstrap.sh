@@ -207,6 +207,17 @@ if [ "$SKIP_RUNNER" = "0" ]; then
   : "${GITHUB_RUNNER_DIR:=/opt/actions-runner}"
 fi
 
+# Observability — optional Home Assistant scrape + optional alert email.
+note "Observability — leave blank to skip HA scrape / email alerts."
+ASK_OPT HOMEASSISTANT_HOST         "Home Assistant host:port (e.g. 10.8.0.5:8123)"
+ASK_OPT HOMEASSISTANT_METRICS_TOKEN "Home Assistant long-lived access token" 1
+ASK_OPT ALERTMANAGER_SMTP_HOST     "SMTP relay host:port for alert emails (e.g. smtp.fastmail.com:587)"
+if [ -n "${ALERTMANAGER_SMTP_HOST:-}" ]; then
+  ASK ALERTMANAGER_SMTP_FROM       "SMTP From address" "" valid_email
+  ASK ALERTMANAGER_EMAIL_TO        "Alert destination email" "" valid_email
+  ASK_OPT ALERTMANAGER_SMTP_PASSWORD "SMTP password" 1
+fi
+
 echo
 ok "configuration captured"
 
@@ -420,6 +431,22 @@ github_repo: "${GITHUB_REPO}"
 github_runner_labels: "${GITHUB_RUNNER_LABELS}"
 EOF
 fi
+if [ -n "${HOMEASSISTANT_HOST:-}" ]; then
+  cat >> /etc/homelab/config.yml <<EOF
+
+# Observability — Home Assistant scrape target.
+homeassistant_host: "${HOMEASSISTANT_HOST}"
+EOF
+fi
+if [ -n "${ALERTMANAGER_SMTP_HOST:-}" ]; then
+  cat >> /etc/homelab/config.yml <<EOF
+
+# Observability — alert email routing.
+alertmanager_smtp_host: "${ALERTMANAGER_SMTP_HOST}"
+alertmanager_smtp_from: "${ALERTMANAGER_SMTP_FROM}"
+alertmanager_email_to:  "${ALERTMANAGER_EMAIL_TO}"
+EOF
+fi
 chmod 0644 /etc/homelab/config.yml
 
 write_secret() {
@@ -431,6 +458,7 @@ write_secret() {
 # Generate what we can; persist what the user typed.
 : "${VAULTWARDEN_ADMIN_TOKEN:=$(openssl rand -base64 48 | tr -d '\n=/+' | head -c 64)}"
 : "${RESTIC_PASSWORD:=$(openssl rand -base64 48 | tr -d '\n=/+' | head -c 48)}"
+: "${GRAFANA_ADMIN_PASSWORD:=$(openssl rand -base64 24 | tr -d '\n=/+' | head -c 32)}"
 
 if [ -z "${TRAEFIK_DASHBOARD_BASICAUTH:-}" ]; then
   # htpasswd -nb generates "user:$2y$...", we double $ for docker-compose env interpolation.
@@ -449,6 +477,9 @@ write_secret restic_b2_account_id         "${RESTIC_B2_ACCOUNT_ID:-}"
 write_secret restic_b2_account_key        "${RESTIC_B2_ACCOUNT_KEY:-}"
 write_secret restic_aws_access_key_id     "${RESTIC_AWS_ACCESS_KEY_ID:-}"
 write_secret restic_aws_secret_access_key "${RESTIC_AWS_SECRET_ACCESS_KEY:-}"
+write_secret grafana_admin_password       "$GRAFANA_ADMIN_PASSWORD"
+write_secret alertmanager_smtp_password   "${ALERTMANAGER_SMTP_PASSWORD:-}"
+write_secret homeassistant_metrics_token  "${HOMEASSISTANT_METRICS_TOKEN:-}"
 [ "$SKIP_RUNNER" = "0" ] && write_secret github_pat "$GITHUB_TOKEN"
 ok "/etc/homelab/ populated"
 
@@ -459,6 +490,7 @@ $(bold 'Save these somewhere safe — you will need them for first login:')
   Traefik dashboard user  : ${TRAEFIK_DASHBOARD_USER}
   (Traefik dashboard password was what you typed)
   restic password         : ${RESTIC_PASSWORD}
+  Grafana admin (user: admin): ${GRAFANA_ADMIN_PASSWORD}
 
 EOF
 pause "Press Enter when you've recorded them"

@@ -1,0 +1,192 @@
+---
+# Observability stack — Grafana + Prometheus + Loki + Tempo + Alertmanager + Alloy.
+# Grafana is the only service reachable from outside the observability network
+# (via Traefik on the `proxy` network). Everything else is internal-only.
+services:
+
+  grafana:
+    image: ${GRAFANA_IMAGE}
+    container_name: grafana
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    env_file:
+      - .env
+    user: "${GRAFANA_UID}:${GRAFANA_GID}"
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - proxy
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: ${GRAFANA_MEM_LIMIT}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+      traefik.http.routers.grafana.rule: "Host(`${OBSERVABILITY_HOST}`)"
+      traefik.http.routers.grafana.entrypoints: "websecure"
+      traefik.http.routers.grafana.tls: "true"
+      traefik.http.routers.grafana.tls.certresolver: "cloudflare"
+      traefik.http.routers.grafana.service: "grafana"
+      traefik.http.routers.grafana.middlewares: "wg-only@file,security-headers@file"
+      traefik.http.services.grafana.loadbalancer.server.port: "3000"
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE}
+    container_name: prometheus
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    user: "${PROMETHEUS_UID}:${PROMETHEUS_GID}"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION}
+      - --web.enable-lifecycle
+      - --web.enable-remote-write-receiver
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - ./data/prometheus:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/-/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: ${PROMETHEUS_MEM_LIMIT}
+
+  loki:
+    image: ${LOKI_IMAGE}
+    container_name: loki
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "${LOKI_UID}:${LOKI_GID}"
+    command:
+      - -config.file=/etc/loki/config.yml
+    volumes:
+      - ./data/loki:/loki
+      - ./loki-config.yml:/etc/loki/config.yml:ro
+    networks:
+      - observability
+    deploy:
+      resources:
+        limits:
+          memory: ${LOKI_MEM_LIMIT}
+
+  tempo:
+    image: ${TEMPO_IMAGE}
+    container_name: tempo
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "${TEMPO_UID}:${TEMPO_GID}"
+    command:
+      - -config.file=/etc/tempo.yml
+    volumes:
+      - ./data/tempo:/var/tempo
+      - ./tempo-config.yml:/etc/tempo.yml:ro
+    networks:
+      - observability
+    deploy:
+      resources:
+        limits:
+          memory: ${TEMPO_MEM_LIMIT}
+
+  alertmanager:
+    image: ${ALERTMANAGER_IMAGE}
+    container_name: alertmanager
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=0.0.0.0:9093
+    volumes:
+      - ./data/alertmanager:/alertmanager
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9093/-/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: ${ALERTMANAGER_MEM_LIMIT}
+
+  alloy:
+    image: ${ALLOY_IMAGE}
+    container_name: alloy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pid: host
+    ports:
+      - "${WG_IP}:514:514/udp"
+      - "${WG_IP}:514:514/tcp"
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+    volumes:
+      - ./alloy-config.alloy:/etc/alloy/config.alloy:ro
+      - ./data/alloy:/var/lib/alloy/data
+      - /:/host/rootfs:ro,rslave
+      - /var/log:/var/log:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - /opt/traefik/logs:/host/opt/traefik/logs:ro
+      - /var/lib/node_exporter/textfile:/var/lib/node_exporter/textfile:ro
+    networks:
+      - observability
+    deploy:
+      resources:
+        limits:
+          memory: ${ALLOY_MEM_LIMIT}
+
+networks:
+  proxy:
+    external: true
+  observability:
+    external: true

@@ -1,0 +1,14 @@
+---
+# Managed by Ansible — dashboards provisioned from files, UI edits don't persist.
+apiVersion: 1
+providers:
+  - name: homelab
+    orgId: 1
+    folder: Homelab
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true

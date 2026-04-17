@@ -1,0 +1,81 @@
+---
+# Prometheus alert rules — evaluated every 30s by Prometheus, routed by Alertmanager.
+# Grafana's unified alerting mirrors these via file provisioning for UI visibility.
+groups:
+  - name: host
+    interval: 30s
+    rules:
+      - alert: HostDiskAlmostFull
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"}
+           / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Root filesystem <10% free on {{ $labels.instance }}"
+          description: "{{ $value | humanizePercentage }} free"
+
+      - alert: HostOutOfMemory
+        expr: |
+          node_memory_MemAvailable_bytes
+          / node_memory_MemTotal_bytes < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host memory <10% available on {{ $labels.instance }}"
+
+      - alert: HostHighCpuLoad
+        expr: |
+          100 - (avg by (instance)
+                 (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU >90% sustained on {{ $labels.instance }}"
+
+  - name: containers
+    interval: 30s
+    rules:
+      - alert: ContainerDown
+        expr: |
+          absent(container_last_seen{name=~"traefik|vaultwarden|grafana|prometheus|loki|tempo|alertmanager|alloy"})
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container not seen for 5m"
+
+      - alert: ContainerHighMemory
+        expr: |
+          (container_memory_working_set_bytes
+           / container_spec_memory_limit_bytes) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} using >90% of its memory limit"
+
+  - name: backup
+    interval: 1m
+    rules:
+      - alert: BackupDidNotRunRecently
+        expr: (time() - restic_last_backup_timestamp_seconds) > 86400 * 2
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No restic backup in >48h"
+
+  - name: certs
+    interval: 1m
+    rules:
+      - alert: CertExpiringSoon
+        expr: (traefik_tls_certs_not_after - time()) < 7 * 86400
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "TLS cert for {{ $labels.sans }} expires in <7d"

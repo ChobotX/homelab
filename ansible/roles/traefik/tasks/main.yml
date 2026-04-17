@@ -18,6 +18,14 @@
     group: root
     mode: "0700"
 
+- name: Ensure Traefik logs directory exists
+  ansible.builtin.file:
+    path: /opt/traefik/logs
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Create shared proxy network
   community.docker.docker_network:
     name: proxy

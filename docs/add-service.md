@@ -91,3 +91,16 @@ curl -k https://cloud.<homelab_domain>      # from VPN, should return Nextcloud
 - **Bind ports only to WG IP** if the service also needs host-exposed ports for some reason. Default: no host ports, Traefik is the only ingress.
 - **Data persistence**: use a named volume or bind mount under `/opt/<svc>/data/`, and add the path to `backup_paths` in `roles/backup/defaults/main.yml`.
 - **Traefik label escaping**: under docker-compose, `${...}` gets interpolated at compose-up time. If you need a literal `$`, double it (`$$`).
+
+## Observability — free, no extra config
+
+- **Logs**: Alloy picks up every container's stdout/stderr via the Docker socket; query in Grafana → Explore → Loki → `{container="<svc>"}`.
+- **Metrics**: if the service exposes a Prometheus `/metrics` endpoint, add a stanza to `ansible/roles/observability/templates/prometheus.yml.j2`:
+  ```yaml
+  - job_name: nextcloud
+    static_configs:
+      - targets: ['nextcloud:9205']
+  ```
+  The Prometheus container is on the `observability` network; service-name DNS works as long as you also join it to `observability` in compose (add to `networks: [proxy, observability]` and declare `observability: { external: true }`).
+- **Traces**: Traefik already emits OTLP; any incoming request gets a `traceID` visible from the Loki log line. If your service speaks OTLP, point it at `http://tempo:4318/v1/traces` (same `observability` network).
+- **Dashboard**: build in Grafana UI → Share → Export JSON → commit to `ansible/roles/observability/files/dashboards/<svc>.json`. Deployed on next push.
