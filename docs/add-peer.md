@@ -45,9 +45,9 @@ sudo wg show
 
 On the homelab:
 ```bash
-sudo /opt/homelab/bootstrap.sh --rotate-wg-key
+sudo /opt/homelab/scripts/rotate-wg-key.sh
 ```
-Then update the homelab's peer entry on the hub with the new pubkey printed by the script, and reload the hub's WG as above.
+Paste the new pubkey (printed by the script) into the homelab's `[Peer]` entry on the hub, reload the hub's WG as above, then restart the tunnel locally.
 
 ## Removing a peer
 

@@ -21,11 +21,10 @@ umask 077
 
 ### ---------- CLI ----------
 
-YES=0; ROTATE_WG_KEY=0; SKIP_RUNNER=0; SKIP_FIRST_RUN=0
+YES=0; SKIP_RUNNER=0; SKIP_FIRST_RUN=0
 for arg in "$@"; do
   case "$arg" in
     -y|--yes)         YES=1 ;;
-    --rotate-wg-key)  ROTATE_WG_KEY=1 ;;
     --skip-runner)    SKIP_RUNNER=1 ;;
     --skip-first-run) SKIP_FIRST_RUN=1 ;;
     -h|--help)
@@ -266,10 +265,10 @@ pkfile=/etc/wireguard/privatekey
 pubfile=/etc/wireguard/publickey
 pskfile=/etc/wireguard/hub_psk
 
-if [ -s "$pkfile" ] && [ "$ROTATE_WG_KEY" = "0" ]; then
+if [ -s "$pkfile" ]; then
   note "WG private key already exists — keeping it"
+  note "To rotate: sudo scripts/rotate-wg-key.sh (then update hub peer)"
 else
-  [ "$ROTATE_WG_KEY" = "1" ] && [ -s "$pkfile" ] && cp -a "$pkfile" "${pkfile}.bak.$(date +%s)"
   wg genkey > "$pkfile"; chmod 0600 "$pkfile"
 fi
 wg pubkey < "$pkfile" > "$pubfile"; chmod 0644 "$pubfile"

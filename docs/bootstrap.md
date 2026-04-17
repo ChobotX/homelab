@@ -70,7 +70,7 @@ Idempotent — safe to re-run. Common reasons:
 
 - **Update the admin SSH key**: `export LAPTOP_PUBKEY='...' && sudo -E ./bootstrap.sh --skip-runner --skip-first-run`
 - **Re-register a dead runner**: re-run; give a fresh registration token or PAT.
-- **Rotate the WG key**: `sudo ./bootstrap.sh --rotate-wg-key` (then update the hub peer).
+- **Rotate the WG key**: `sudo ./scripts/rotate-wg-key.sh` (then update the hub peer).
 
 ## Editing secrets later
 
