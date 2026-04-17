@@ -10,23 +10,13 @@
     - /opt/traefik
     - /opt/traefik/dynamic
 
-- name: Ensure acme directory exists
+- name: Ensure acme directory exists (0700 is enough — Traefik creates acme.json at 0600)
   ansible.builtin.file:
     path: /opt/traefik/letsencrypt
     state: directory
     owner: root
     group: root
     mode: "0700"
-
-- name: Ensure acme.json has correct perms if it exists
-  ansible.builtin.file:
-    path: /opt/traefik/letsencrypt/acme.json
-    state: touch
-    owner: root
-    group: root
-    mode: "0600"
-    modification_time: preserve
-    access_time: preserve
 
 - name: Create shared proxy network
   community.docker.docker_network:

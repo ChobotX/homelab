@@ -50,8 +50,9 @@ jobs:
 
       - name: Install ansible collections (so ansible-lint can resolve modules)
         run: |
-          pip install --user ansible-core==2.20.4
-          ~/.local/bin/ansible-galaxy collection install -r ansible/requirements.yml
+          core_version=$(cat .ansible-version)
+          pip install --user "ansible-core==${core_version}"
+          ~/.local/bin/ansible-galaxy collection install --force -r ansible/requirements.yml
 
       - uses: ansible/ansible-lint@v26.4.0
         with:

@@ -12,6 +12,14 @@
     group: root
     mode: "0700"
 
+- name: Ensure restic cache directory (referenced via XDG_CACHE_HOME in service unit)
+  ansible.builtin.file:
+    path: /var/cache/restic
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
 - name: Deploy restic environment file (repo URL + credentials + password)
   ansible.builtin.template:
     src: restic.env.j2
@@ -21,6 +29,19 @@
     mode: "0600"
   no_log: true
 
+# Compute once: is SFTP the backend? If repo URL starts with `sftp:` AND we have
+# a host/user, lay down the SSH key + known_hosts + ssh_config block. Otherwise
+# remove them so switching backends doesn't leave stale credentials behind.
+- name: Decide SFTP state
+  ansible.builtin.set_fact:
+    backup_uses_sftp: >-
+      {{
+        (restic_repo_url | default('')).startswith('sftp:') and
+        (restic_sftp_host | default('') | length > 0) and
+        (restic_sftp_user | default('') | length > 0) and
+        (restic_sftp_private_key | default('') | length > 0)
+      }}
+
 - name: Ensure root's ssh dir exists
   ansible.builtin.file:
     path: /root/.ssh
@@ -28,9 +49,9 @@
     owner: root
     group: root
     mode: "0700"
-  when: restic_sftp_private_key is defined and restic_sftp_private_key | length > 0
+  when: backup_uses_sftp
 
-- name: Deploy SFTP private key for restic
+- name: Manage SFTP private key
   ansible.builtin.copy:
     dest: /root/.ssh/homelab_sb_id_ed25519
     content: "{{ restic_sftp_private_key }}"
@@ -38,18 +59,30 @@
     group: root
     mode: "0600"
   no_log: true
-  when: restic_sftp_private_key is defined and restic_sftp_private_key | length > 0
+  when: backup_uses_sftp
 
-- name: Deploy SFTP known_hosts
+- name: Remove SFTP private key when SFTP is not the backend
+  ansible.builtin.file:
+    path: /root/.ssh/homelab_sb_id_ed25519
+    state: absent
+  when: not backup_uses_sftp
+
+- name: Manage SFTP known_hosts
   ansible.builtin.copy:
     dest: /root/.ssh/known_hosts_sb
-    content: "{{ restic_sftp_known_hosts }}"
+    content: "{{ restic_sftp_known_hosts | default('') }}"
     owner: root
     group: root
     mode: "0644"
-  when: restic_sftp_known_hosts is defined and restic_sftp_known_hosts | length > 0
+  when: backup_uses_sftp
 
-- name: Append ssh_config host block for Storage Box
+- name: Remove SFTP known_hosts when SFTP is not the backend
+  ansible.builtin.file:
+    path: /root/.ssh/known_hosts_sb
+    state: absent
+  when: not backup_uses_sftp
+
+- name: Manage ssh_config host block for Storage Box
   ansible.builtin.blockinfile:
     path: /root/.ssh/config
     create: true
@@ -57,16 +90,14 @@
     group: root
     mode: "0600"
     marker: "# {mark} ANSIBLE MANAGED BLOCK: restic storage box"
+    state: "{{ 'present' if backup_uses_sftp else 'absent' }}"
     block: |
-      Host {{ restic_sftp_host }}
-        User {{ restic_sftp_user }}
+      Host {{ restic_sftp_host | default('') }}
+        User {{ restic_sftp_user | default('') }}
         IdentityFile /root/.ssh/homelab_sb_id_ed25519
         IdentitiesOnly yes
         UserKnownHostsFile /root/.ssh/known_hosts_sb
         StrictHostKeyChecking yes
-  when:
-    - restic_sftp_host is defined
-    - restic_sftp_user is defined
 
 - name: Deploy exclude list
   ansible.builtin.template:
@@ -84,7 +115,10 @@
     group: root
     mode: "0750"
 
-- name: Initialize restic repo (idempotent)
+- name: Initialize restic repo (idempotent; skipped without password)
+  # Only run when credentials are populated — never swallow a wrong-password
+  # error (that's a real misconfiguration, not a first-run condition).
+  when: restic_password | default('') | length > 0
   ansible.builtin.shell: |
     set -a
     . /etc/restic/restic.env
@@ -96,11 +130,6 @@
     executable: /bin/bash
   register: backup_restic_init
   changed_when: "'created restic repository' in (backup_restic_init.stdout | default(''))"
-  # Don't fail on first apply if credentials aren't filled yet.
-  failed_when:
-    - backup_restic_init.rc != 0
-    - "'unable to open config file' not in (backup_restic_init.stderr | default(''))"
-    - "'Fatal: wrong password' not in (backup_restic_init.stderr | default(''))"
 
 - name: Deploy systemd service unit
   ansible.builtin.template:

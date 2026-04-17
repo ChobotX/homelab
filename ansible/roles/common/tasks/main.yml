@@ -113,8 +113,9 @@
     - { name: kernel.dmesg_restrict, value: "1" }
     # Disable the magic-SysRq key except for sync.
     - { name: kernel.sysrq, value: "4" }
-  # In containers some of these are read-only; don't abort the whole run.
-  failed_when: false
+  # Only in containers do we tolerate read-only sysctls. Real hosts MUST succeed
+  # or we hide hardening regressions.
+  ignore_errors: "{{ ansible_virtualization_type in ['docker', 'lxc', 'container'] }}"
 
 - name: Ensure systemd-timesyncd package is present
   ansible.builtin.apt:

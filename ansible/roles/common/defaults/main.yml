@@ -26,7 +26,9 @@ journald_max_retention_sec: 30day
 #   patch     = security + ${distro_id}-updates  (auto-apply stable patches too)
 unattended_upgrades_mode: security
 unattended_upgrades_reboot: "true"
-unattended_upgrades_reboot_time: "03:30"
+# 04:00 is intentional — restic backup fires at 03:00 with a 15-min random jitter;
+# rebooting before backup finishes would SIGTERM an in-flight snapshot.
+unattended_upgrades_reboot_time: "04:00"
 # Optional: email address for unattended-upgrades reports. Empty = no emails.
 unattended_upgrades_mail: ""
 

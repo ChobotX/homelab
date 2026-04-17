@@ -8,6 +8,11 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8082/ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     ports:
       - "${WG_IP}:80:80"
       - "${WG_IP}:443:443"

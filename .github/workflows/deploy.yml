@@ -49,12 +49,13 @@ jobs:
 
       - name: Install ansible-core (user-local, no sudo)
         run: |
-          python3 -m pip install --user --upgrade "ansible-core>=2.20,<2.21"
+          core_version=$(cat .ansible-version)
+          python3 -m pip install --user --upgrade "ansible-core==${core_version}"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install Ansible collections
         working-directory: ansible
-        run: ansible-galaxy install -r requirements.yml
+        run: ansible-galaxy install --force -r requirements.yml
 
       - name: Override inventory for local run
         run: |
@@ -85,13 +86,4 @@ jobs:
             "${ARGS[@]}"
 
       - name: Post-deploy smoke checks (local)
-        run: |
-          set -e
-          systemctl is-active --quiet ssh
-          systemctl is-active --quiet fail2ban
-          sudo ufw status | grep -q "Status: active"
-          docker ps --format '{{.Names}}' | grep -q '^traefik$'
-          docker ps --format '{{.Names}}' | grep -q '^vaultwarden$'
-          sudo test "$(stat -c %a /opt/traefik/letsencrypt/acme.json)" = "600"
-          systemctl is-enabled --quiet restic-backup.timer
-          echo "✓ all green"
+        run: ./scripts/smoke-deploy.sh

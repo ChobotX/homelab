@@ -72,8 +72,9 @@ EOF
     apt-get update -qq
     apt-get install -y --no-install-recommends \
       git python3-pip python3-venv yamllint >/dev/null
+    core_version=$(cat /opt/homelab/.ansible-version)
     python3 -m pip install --break-system-packages --quiet \
-      "ansible-core>=2.20,<2.21"
+      "ansible-core==${core_version}"
     ansible-galaxy collection install -r /opt/homelab/ansible/requirements.yml >/dev/null
   '
 }

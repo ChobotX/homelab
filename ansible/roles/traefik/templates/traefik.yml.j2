@@ -12,7 +12,13 @@ api:
   dashboard: true
   insecure: false
 
+# Healthcheck endpoint — internal only, used by the container healthcheck.
+ping:
+  entryPoint: ping
+
 entryPoints:
+  ping:
+    address: ":8082"
   web:
     address: ":80"
     http:
