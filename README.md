@@ -46,6 +46,7 @@ From then on: every push to `main` → `deploy.yml` → Ansible converges locall
 
 ## Daily ops
 
+- Architecture + role order → [docs/architecture.md](docs/architecture.md)
 - Configuration index → [docs/configuration.md](docs/configuration.md)
 - Security / threat model → [docs/security.md](docs/security.md)
 - CI / CD flow → [docs/ci.md](docs/ci.md)

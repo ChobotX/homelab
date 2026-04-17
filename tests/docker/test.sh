@@ -101,9 +101,9 @@ wireguard_address: 10.0.0.2/24
 wireguard_subnet: 10.0.0.0/24
 wireguard_listen_port: 51820
 
-wireguard_peer_hetzner_pubkey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-wireguard_peer_hetzner_endpoint: "hub.invalid:51820"
-wireguard_peer_hetzner_allowedips: "10.0.0.0/24"
+wireguard_peer_hub_pubkey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+wireguard_peer_hub_endpoint: "hub.invalid:51820"
+wireguard_peer_hub_allowedips: "10.0.0.0/24"
 
 restic_repo_url: "/tmp/restic-test-repo"
 EOF

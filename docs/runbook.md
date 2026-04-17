@@ -1,20 +1,6 @@
 # Runbook
 
-Common ops tasks. Alphabetized.
-
-## Docker-based test harness
-
-Ephemeral Ubuntu 24 container, applies kernel-independent roles:
-
-```bash
-./tests/docker/test.sh check     # lint + syntax only
-./tests/docker/test.sh apply     # apply common + ssh + fail2ban + docker, run sanity asserts
-./tests/docker/test.sh shell     # drop into the running container
-./tests/docker/test.sh clean     # tear down
-```
-
-For full E2E (WG + UFW + Traefik + Vaultwarden + backup) use a real Ubuntu 24
-VM — Multipass, Vagrant, or a throwaway cloud instance.
+Common ops tasks, alphabetized.
 
 ## Ansible — check vs apply
 
@@ -25,11 +11,8 @@ ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml --check --d
 # Apply everything
 ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
 
-# Apply one role only
+# One role only (meta/main.yml dependencies pull prerequisites automatically)
 ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml --tags traefik
-
-# Run against a single host (we only have one, but habit-forming)
-ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml --limit homelab
 ```
 
 ## Backup — trigger, inspect, restore
@@ -55,7 +38,8 @@ Full disaster recovery: see [restore.md](restore.md).
 ```bash
 docker ps
 docker compose -f /opt/traefik/docker-compose.yml logs -f
-docker compose -f /opt/traefik/docker-compose.yml pull && docker compose -f /opt/traefik/docker-compose.yml up -d
+docker compose -f /opt/traefik/docker-compose.yml pull && \
+  docker compose -f /opt/traefik/docker-compose.yml up -d
 ```
 
 ## Firewall (UFW) — check
@@ -64,45 +48,93 @@ docker compose -f /opt/traefik/docker-compose.yml pull && docker compose -f /opt
 sudo ufw status verbose
 ```
 
-**Critical gotcha:** Docker inserts its own iptables rules that can bypass UFW. Our Traefik compose binds ports to the **WG IP only** (`${WG_IP}:80:80` in `roles/traefik/files/docker-compose.yml`). If you ever publish a container port without the IP prefix, it WILL be reachable on any interface regardless of UFW rules.
+**Gotcha:** Docker inserts its own iptables rules that can bypass UFW. Our Traefik compose binds ports to the WG IP only (`${WG_IP}:80:80`). A host port published without the IP prefix would be reachable on any interface regardless of UFW rules.
 
-Sanity check:
+Sanity:
 ```bash
-sudo ss -tlnp | grep -E ':(80|443)\b'     # should only show LISTEN on 10.8.0.X
+sudo ss -tlnp | grep -E ':(80|443)\b'   # should only show LISTEN on 10.8.0.X
 ```
 
-## Secrets — edit on the box
+## Rotate — age / cloudflare / vaultwarden / restic credentials
+
+All credentials live in `/etc/homelab/secrets/`. Overwrite the file, then dispatch a deploy (or push any change to main):
+
+```bash
+# On the box
+sudo install -m 0400 -T <(printf '%s' NEWVALUE) /etc/homelab/secrets/<name>
+
+# From the repo
+gh workflow run deploy.yml --ref main -f tags=<role>
+```
+
+Per-service mapping:
+- `cloudflare_dns01_token` → `--tags traefik`
+- `vaultwarden_admin_token` → `--tags vaultwarden`
+- `traefik_dashboard_basicauth` → `--tags traefik`
+- `restic_password` / backend creds → `--tags backup`
+
+## Rotate — WG key
 
 ```bash
 # On the homelab
-sudo $EDITOR /etc/homelab/config.yml                   # non-secret host truth
-sudo install -m 0400 -T <(printf '%s' NEWVALUE) /etc/homelab/secrets/NAME
+sudo /opt/homelab/scripts/rotate-wg-key.sh
 ```
 
-Rotating the Cloudflare token? Overwrite the file, then dispatch a deploy (or push any change):
+Paste the new pubkey (printed by the script) into the homelab's `[Peer]` entry on the hub, reload the hub's WG, then restart the tunnel locally. See [add-peer.md](add-peer.md) for the hub-side commands.
+
+## Runner — re-register
+
+The ephemeral JIT runner re-registers itself on every job via the PAT in `/etc/homelab/secrets/github_pat`. To force a fresh registration:
+
 ```bash
-# From the repo
-gh workflow run deploy.yml --ref main -f tags=traefik
+sudo systemctl restart gha-runner-jit.service
 ```
-Traefik picks up the new token on restart.
+
+To replace the PAT itself:
+
+```bash
+sudo install -m 0400 -o root -g gha-runner -T \
+  <(printf '%s' 'new-pat-here') /etc/homelab/secrets/github_pat
+sudo systemctl restart gha-runner-jit.service
+```
+
+To stop the runner completely (e.g. suspected compromise):
+
+```bash
+sudo systemctl stop gha-runner-jit.service
+sudo systemctl disable gha-runner-jit.service
+```
 
 ## SSH — reload the hardened config safely
 
 ```bash
-# Validate first
-sudo sshd -t
-
-# Apply via Ansible (preferred)
+sudo sshd -t                                           # validate first
 ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml --tags ssh
 ```
 
-If you ever lock yourself out: console access on the box → re-run `bootstrap.sh` (it resets the minimal passable config).
+Locked out? Console access on the box → re-run `bootstrap.sh` (resets the minimal passable config).
+
+## Test harness — local Docker
+
+Lightweight local test (no WG / UFW / full stack). For full E2E use a real VM.
+
+```bash
+./tests/docker/test.sh check     # lint + syntax
+./tests/docker/test.sh apply     # apply common / ssh / fail2ban / docker + asserts
+./tests/docker/test.sh shell     # drop into the container
+./tests/docker/test.sh clean     # tear down
+```
 
 ## Vaultwarden — admin panel
 
-URL: `https://vault.<homelab_domain>/admin`. Token is `vaultwarden_admin_token` from the vault.
+URL: `https://vault.<homelab_domain>/admin`. Token is in `/etc/homelab/secrets/vaultwarden_admin_token`.
 
-Disable after initial setup if you want to minimize attack surface — set `ADMIN_TOKEN=` (empty) in the `.env` and redeploy.
+To disable the admin panel entirely, overwrite the token file with an empty string — Vaultwarden treats an empty `ADMIN_TOKEN` as "disable `/admin`", not "no auth":
+
+```bash
+sudo install -m 0400 -T /dev/null /etc/homelab/secrets/vaultwarden_admin_token
+gh workflow run deploy.yml --ref main -f tags=vaultwarden
+```
 
 ## WireGuard — status, restart
 
@@ -112,14 +144,10 @@ sudo systemctl restart wg-quick@wg0
 journalctl -u wg-quick@wg0 --since -1h
 ```
 
-Change peer config → edit `/etc/homelab/config.yml` on the box, then:
+Peer config change → edit `/etc/homelab/config.yml` on the box, then:
+
 ```bash
 ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml --tags wireguard
 ```
 
-## Why did the playbook change nothing? (debugging idempotency)
-
-```bash
-ansible-playbook ... --check --diff -v
-```
-`-v` shows skipped tasks and why. If something looks wrong on the box but Ansible says "no changes", someone edited files manually — re-run **without** `--check` to force Ansible's version.
+The handler reloads via `wg syncconf` (no interface drop), so this is safe to run over SSH through the same tunnel.

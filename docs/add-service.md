@@ -1,18 +1,12 @@
 # Adding a new service behind Traefik
 
-Pattern: each service = one Ansible role + one docker-compose stack in `/opt/<svc>/` on the box, joined to the external `proxy` network, configured via Traefik labels.
-
-## Steps
-
-### 1. Pick the service name + host
-
-Say you want to add Nextcloud at `cloud.<homelab_domain>`.
+One Ansible role + one docker-compose stack per service. Example: Nextcloud at `cloud.<homelab_domain>`.
 
 - Role directory: `ansible/roles/nextcloud/`
 - Stack directory on box: `/opt/nextcloud/`
 - Host: `nextcloud_host: "cloud.{{ homelab_domain }}"` in `roles/nextcloud/defaults/main.yml`
 
-### 2. Role scaffold
+## Role scaffold
 
 Copy the structure from `roles/vaultwarden/` — it is the canonical minimal example:
 
@@ -30,7 +24,7 @@ ansible/roles/nextcloud/
 3. Copy `docker-compose.yml`.
 4. `community.docker.docker_compose_v2` up.
 
-### 3. docker-compose.yml
+## docker-compose.yml
 
 Required:
 - `networks: { proxy: { external: true } }`
@@ -51,7 +45,7 @@ labels:
 
 `wg-only@file` + `security-headers@file` come from `roles/traefik/templates/dynamic-middlewares.yml.j2`. Reuse, don't duplicate.
 
-### 4. Secrets
+## Secrets
 
 Anything sensitive lives on the box under `/etc/homelab/secrets/`:
 
@@ -62,7 +56,7 @@ sudo install -m 0400 -T <(openssl rand -base64 32) /etc/homelab/secrets/nextclou
 
 Add the name to `homelab_secret_names` in `ansible/playbooks/site.yml` so the slurp step picks it up.
 
-### 5. Register the role
+## Register the role
 
 Append to `ansible/playbooks/site.yml`, **after** `traefik`:
 
@@ -71,7 +65,7 @@ Append to `ansible/playbooks/site.yml`, **after** `traefik`:
   tags: [nextcloud, services]
 ```
 
-### 6. DNS
+## DNS
 
 Add a DNS A record in Cloudflare: `cloud.<domain>` → homelab's public IP? No — **the homelab has no public IP**. Two options:
 
@@ -80,18 +74,16 @@ Add a DNS A record in Cloudflare: `cloud.<domain>` → homelab's public IP? No �
 
 ACME DNS-01 doesn't need the hostname to resolve — only the `_acme-challenge.cloud.<domain>` TXT record, which Cloudflare handles via API. So Let's Encrypt issues certs regardless of A-record presence.
 
-### 7. Deploy
+## Deploy + verify
 
 ```bash
 ansible-playbook -i inventory.yml playbooks/site.yml --tags nextcloud
 ```
 
-### 8. Verify
-
 ```bash
-curl -k https://cloud.<homelab_domain>      # from VPN, should return Nextcloud
 docker ps | grep nextcloud
 docker compose -f /opt/nextcloud/docker-compose.yml logs
+curl -k https://cloud.<homelab_domain>      # from VPN, should return Nextcloud
 ```
 
 ## Gotchas

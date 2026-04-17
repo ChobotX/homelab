@@ -30,9 +30,9 @@ Written by `bootstrap.sh`; loaded into the play via `slurp` + `set_fact` at run 
 | `wireguard_address` | Homelab's IP inside the VPN (CIDR form) |
 | `wireguard_subnet` | Full VPN subnet (UFW allow rules + fail2ban ignore) |
 | `wireguard_listen_port` | UDP listen port on this peer |
-| `wireguard_peer_hetzner_pubkey` | Hub public key |
-| `wireguard_peer_hetzner_endpoint` | `host:port` |
-| `wireguard_peer_hetzner_allowedips` | What routes through the hub (usually the full VPN subnet) |
+| `wireguard_peer_hub_pubkey` | Hub public key |
+| `wireguard_peer_hub_endpoint` | `host:port` |
+| `wireguard_peer_hub_allowedips` | What routes through the hub (usually the full VPN subnet) |
 | `restic_repo_url` | Restic repo URL (`sftp:...`, `b2:...`, `s3:...`) |
 | `restic_sftp_host` / `_user` | SFTP host + user (only when using SFTP backend) |
 

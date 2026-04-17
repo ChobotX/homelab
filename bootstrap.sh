@@ -400,9 +400,9 @@ wireguard_address: ${WG_ADDRESS}
 wireguard_subnet: ${WG_SUBNET}
 wireguard_listen_port: ${WG_LISTEN_PORT}
 
-wireguard_peer_hetzner_pubkey: "${WG_PEER_PUBKEY}"
-wireguard_peer_hetzner_endpoint: "${WG_PEER_ENDPOINT}"
-wireguard_peer_hetzner_allowedips: "${WG_PEER_ALLOWED}"
+wireguard_peer_hub_pubkey: "${WG_PEER_PUBKEY}"
+wireguard_peer_hub_endpoint: "${WG_PEER_ENDPOINT}"
+wireguard_peer_hub_allowedips: "${WG_PEER_ALLOWED}"
 
 restic_repo_url: "${RESTIC_REPO_URL}"
 EOF
