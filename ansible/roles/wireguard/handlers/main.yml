@@ -1,0 +1,6 @@
+---
+- name: Reload wg0
+  # `wg-quick save/strip` would regenerate the conf; instead bounce the interface.
+  ansible.builtin.systemd:
+    name: wg-quick@wg0
+    state: restarted

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":enableVulnerabilityAlertsWithLabel(security)",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "timezone": "Europe/Prague",
+  "schedule": ["before 6am on monday"],
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "🤖 Renovate dashboard (approve major/minor here)",
+  "prConcurrentLimit": 8,
+  "rangeStrategy": "pin",
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "Auto-merge patch + digest updates after CI passes",
+      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true,
+      "labels": ["dependencies", "auto-merge"]
+    },
+    {
+      "description": "Wait for human approval on minor/major",
+      "matchUpdateTypes": ["minor", "major"],
+      "automerge": false,
+      "labels": ["dependencies", "needs-approval"]
+    },
+    {
+      "description": "Don't touch Ansible collection majors — we pin ourselves",
+      "matchFileNames": ["ansible/requirements.yml"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Ansible role defaults — lines like: traefik_image: \"traefik:v3.6.13\"",
+      "customType": "regex",
+      "fileMatch": [
+        "^ansible/roles/.+/defaults/.+\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "(?<indent>\\s*)[a-zA-Z0-9_]+_image:\\s*[\"']?(?<depName>(?:[^\\s\"':]+(?::\\d+)?/)?[^\\s\"':]+?):(?<currentValue>[^\\s\"'@]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?[\"']?"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    }
+  ]
+}

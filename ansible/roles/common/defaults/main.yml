@@ -1,0 +1,37 @@
+---
+# Base packages installed on every host.
+common_packages:
+  - curl
+  - ca-certificates
+  - gnupg
+  - htop
+  - git
+  - tmux
+  - unzip
+  - jq
+  - vim
+  - rsync
+  - logrotate
+  - dnsutils
+  - net-tools
+  - iproute2
+
+# journald retention caps
+journald_system_max_use: 500M
+journald_max_retention_sec: 30day
+
+# Unattended-upgrades
+# `mode`:
+#   security  = only ${distro_id}-security  (conservative, recommended)
+#   patch     = security + ${distro_id}-updates  (auto-apply stable patches too)
+unattended_upgrades_mode: security
+unattended_upgrades_reboot: "true"
+unattended_upgrades_reboot_time: "03:30"
+# Optional: email address for unattended-upgrades reports. Empty = no emails.
+unattended_upgrades_mail: ""
+
+# APT packages pinned so unattended-upgrades won't bump major versions.
+apt_pinned_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io

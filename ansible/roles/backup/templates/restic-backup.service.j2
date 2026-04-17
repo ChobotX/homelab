@@ -1,0 +1,19 @@
+[Unit]
+Description=Restic backup (managed by Ansible)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/restic/restic.env
+ExecStart=/usr/local/sbin/restic-backup.sh
+Nice=19
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/cache/restic
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

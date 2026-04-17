@@ -1,0 +1,4 @@
+---
+traefik_image: "traefik:v3.6.13"
+traefik_cert_resolver: cloudflare
+traefik_dashboard_host: "traefik.{{ homelab_domain }}"

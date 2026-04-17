@@ -1,0 +1,5 @@
+---
+vaultwarden_image: "vaultwarden/server:1.35.7"
+vaultwarden_host: "vault.{{ homelab_domain }}"
+vaultwarden_signups_allowed: false
+vaultwarden_invitations_allowed: true

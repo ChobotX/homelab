@@ -1,0 +1,127 @@
+---
+- name: Install restic
+  ansible.builtin.apt:
+    name: restic
+    state: present
+
+- name: Ensure /etc/restic directory
+  ansible.builtin.file:
+    path: /etc/restic
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Deploy restic environment file (repo URL + credentials + password)
+  ansible.builtin.template:
+    src: restic.env.j2
+    dest: /etc/restic/restic.env
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Ensure root's ssh dir exists
+  ansible.builtin.file:
+    path: /root/.ssh
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: restic_sftp_private_key is defined and restic_sftp_private_key | length > 0
+
+- name: Deploy SFTP private key for restic
+  ansible.builtin.copy:
+    dest: /root/.ssh/homelab_sb_id_ed25519
+    content: "{{ restic_sftp_private_key }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: restic_sftp_private_key is defined and restic_sftp_private_key | length > 0
+
+- name: Deploy SFTP known_hosts
+  ansible.builtin.copy:
+    dest: /root/.ssh/known_hosts_sb
+    content: "{{ restic_sftp_known_hosts }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: restic_sftp_known_hosts is defined and restic_sftp_known_hosts | length > 0
+
+- name: Append ssh_config host block for Storage Box
+  ansible.builtin.blockinfile:
+    path: /root/.ssh/config
+    create: true
+    owner: root
+    group: root
+    mode: "0600"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK: restic storage box"
+    block: |
+      Host {{ restic_sftp_host }}
+        User {{ restic_sftp_user }}
+        IdentityFile /root/.ssh/homelab_sb_id_ed25519
+        IdentitiesOnly yes
+        UserKnownHostsFile /root/.ssh/known_hosts_sb
+        StrictHostKeyChecking yes
+  when:
+    - restic_sftp_host is defined
+    - restic_sftp_user is defined
+
+- name: Deploy exclude list
+  ansible.builtin.template:
+    src: excludes.j2
+    dest: /etc/restic/excludes.txt
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Deploy backup script
+  ansible.builtin.template:
+    src: restic-backup.sh.j2
+    dest: /usr/local/sbin/restic-backup.sh
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Initialize restic repo (idempotent)
+  ansible.builtin.shell: |
+    set -a
+    . /etc/restic/restic.env
+    set +a
+    if ! restic snapshots >/dev/null 2>&1; then
+      restic init
+    fi
+  args:
+    executable: /bin/bash
+  register: backup_restic_init
+  changed_when: "'created restic repository' in (backup_restic_init.stdout | default(''))"
+  # Don't fail on first apply if credentials aren't filled yet.
+  failed_when:
+    - backup_restic_init.rc != 0
+    - "'unable to open config file' not in (backup_restic_init.stderr | default(''))"
+    - "'Fatal: wrong password' not in (backup_restic_init.stderr | default(''))"
+
+- name: Deploy systemd service unit
+  ansible.builtin.template:
+    src: restic-backup.service.j2
+    dest: /etc/systemd/system/restic-backup.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Deploy systemd timer unit
+  ansible.builtin.template:
+    src: restic-backup.timer.j2
+    dest: /etc/systemd/system/restic-backup.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start the backup timer
+  ansible.builtin.systemd:
+    name: restic-backup.timer
+    state: started
+    enabled: true
+    daemon_reload: true

@@ -1,0 +1,3 @@
+---
+# Nothing to exclude — no encrypted files in the tree.
+exclude_paths: []

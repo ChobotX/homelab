@@ -1,0 +1,25 @@
+# Managed by Ansible — Traefik dynamic middlewares.
+http:
+  middlewares:
+    dashboard-auth:
+      basicAuth:
+        users:
+          - "{{ traefik_dashboard_basicauth }}"
+
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: strict-origin-when-cross-origin
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    wg-only:
+      # Secondary belt — only clients from the WG subnet are allowed.
+      ipAllowList:
+        sourceRange:
+          - "{{ wireguard_subnet }}"

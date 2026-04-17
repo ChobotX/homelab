@@ -1,0 +1,14 @@
+---
+dependencies:
+  # banaction=ufw needs ufw; jail matches sshd_config set by ssh_hardening.
+  - role: ufw
+  - role: ssh_hardening
+galaxy_info:
+  role_name: fail2ban
+  author: chobotx
+  description: fail2ban with sshd jail, banning via ufw
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]

@@ -1,0 +1,27 @@
+// Managed by Ansible — common role.
+// Mode: {{ unattended_upgrades_mode }}
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+{% if unattended_upgrades_mode == "patch" %}
+    // Stable patches (non-security). Controlled by unattended_upgrades_mode=patch.
+    "${distro_id}:${distro_codename}-updates";
+{% endif %}
+};
+
+Unattended-Upgrade::Package-Blacklist {
+{% for pkg in apt_pinned_packages %}
+    "{{ pkg }}";
+{% endfor %}
+};
+
+Unattended-Upgrade::DevRelease "auto";
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "{{ unattended_upgrades_reboot }}";
+Unattended-Upgrade::Automatic-Reboot-Time "{{ unattended_upgrades_reboot_time }}";
+{% if unattended_upgrades_mail %}
+Unattended-Upgrade::Mail "{{ unattended_upgrades_mail }}";
+Unattended-Upgrade::MailReport "on-change";
+{% endif %}

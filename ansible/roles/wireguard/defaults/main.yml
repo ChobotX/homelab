@@ -1,0 +1,4 @@
+---
+wireguard_mtu: 1420
+wireguard_peer_name: hetzner_hub
+wireguard_peer_keepalive: 25

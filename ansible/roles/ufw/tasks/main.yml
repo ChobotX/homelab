@@ -1,0 +1,49 @@
+---
+- name: Install ufw
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+- name: Set default incoming policy to deny
+  community.general.ufw:
+    direction: incoming
+    policy: deny
+
+- name: Set default outgoing policy to allow
+  community.general.ufw:
+    direction: outgoing
+    policy: allow
+
+- name: Set default routed policy to deny
+  community.general.ufw:
+    direction: routed
+    policy: deny
+
+- name: Allow SSH from WG subnet
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+    src: "{{ wireguard_subnet }}"
+    comment: ssh-from-wg
+
+- name: Allow HTTP from WG subnet (Traefik ingress over VPN only)
+  community.general.ufw:
+    rule: allow
+    port: "80"
+    proto: tcp
+    src: "{{ wireguard_subnet }}"
+    comment: http-from-wg
+
+- name: Allow HTTPS from WG subnet (Traefik ingress over VPN only)
+  community.general.ufw:
+    rule: allow
+    port: "443"
+    proto: tcp
+    src: "{{ wireguard_subnet }}"
+    comment: https-from-wg
+
+- name: Enable and persist ufw
+  community.general.ufw:
+    state: enabled
+    logging: "low"

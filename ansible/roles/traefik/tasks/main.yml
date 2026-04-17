@@ -1,0 +1,80 @@
+---
+- name: Ensure /opt/traefik layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/traefik
+    - /opt/traefik/dynamic
+
+- name: Ensure acme directory exists
+  ansible.builtin.file:
+    path: /opt/traefik/letsencrypt
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Ensure acme.json has correct perms if it exists
+  ansible.builtin.file:
+    path: /opt/traefik/letsencrypt/acme.json
+    state: touch
+    owner: root
+    group: root
+    mode: "0600"
+    modification_time: preserve
+    access_time: preserve
+
+- name: Create shared proxy network
+  community.docker.docker_network:
+    name: proxy
+    state: present
+
+- name: Compute WG IPv4 address (without CIDR) for port binding
+  ansible.builtin.set_fact:
+    traefik_wireguard_ip: "{{ wireguard_address.split('/')[0] }}"
+
+- name: Template traefik.yml (static config)
+  ansible.builtin.template:
+    src: traefik.yml.j2
+    dest: /opt/traefik/traefik.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart traefik stack
+
+- name: Template dynamic middlewares config
+  ansible.builtin.template:
+    src: dynamic-middlewares.yml.j2
+    dest: /opt/traefik/dynamic/middlewares.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart traefik stack
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/traefik/.env
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart traefik stack
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/traefik/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart traefik stack
+
+- name: Bring up Traefik stack
+  community.docker.docker_compose_v2:
+    project_src: /opt/traefik
+    state: present
+    pull: policy

@@ -1,0 +1,32 @@
+---
+- name: Ensure sshd privilege-separation runtime dir exists
+  # On a real Ubuntu boot /run/sshd is created by systemd-tmpfiles; this is
+  # defence-in-depth for edge cases (manual /run wipes, containers, rescue).
+  ansible.builtin.file:
+    path: /run/sshd
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Remove bootstrap-stage sshd override (replaced by this role)
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d/00-bootstrap.conf
+    state: absent
+  notify: Reload sshd
+
+- name: Deploy hardened sshd drop-in
+  ansible.builtin.template:
+    src: sshd_hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload sshd
+
+- name: Ensure ssh service is enabled
+  ansible.builtin.systemd:
+    name: ssh
+    enabled: true
+    state: started

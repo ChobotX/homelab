@@ -1,0 +1,7 @@
+---
+# Truly global vars — not per-role. Per-role defaults live in roles/<role>/defaults/main.yml.
+
+ansible_python_interpreter: /usr/bin/python3
+
+timezone: Europe/Prague
+locale: en_US.UTF-8

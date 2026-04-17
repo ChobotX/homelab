@@ -1,0 +1,11 @@
+---
+# Test inventory — Ansible runs INSIDE the Ubuntu 24 test container, so the
+# target is localhost via the built-in `local` connection. No SSH, no docker
+# exec indirection — Ansible just runs tasks directly in the container.
+all:
+  children:
+    homelab_servers:
+      hosts:
+        homelab:
+          ansible_connection: local
+          ansible_python_interpreter: /usr/bin/python3

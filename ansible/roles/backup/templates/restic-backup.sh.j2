@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Managed by Ansible — restic backup driver.
+set -euo pipefail
+
+# shellcheck disable=SC1091
+. /etc/restic/restic.env
+
+PATHS=(
+{% for p in backup_paths %}
+  "{{ p }}"
+{% endfor %}
+)
+
+# Backup
+restic backup \
+  --tag scheduled \
+  --exclude-file /etc/restic/excludes.txt \
+  --one-file-system \
+  "${PATHS[@]}"
+
+# Prune policy
+restic forget \
+  --tag scheduled \
+  --keep-daily   {{ backup_keep_daily }} \
+  --keep-weekly  {{ backup_keep_weekly }} \
+  --keep-monthly {{ backup_keep_monthly }} \
+  --prune
+
+# Fast integrity check (structure only; full reads weekly via --read-data-subset).
+restic check

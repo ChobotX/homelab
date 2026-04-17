@@ -1,0 +1,11 @@
+---
+# The homelab host. WG-only — not reachable without VPN.
+# Connection user + SSH key: configure `~/.ssh/config` on your laptop, or pass
+# --user / -i flags. CI deploy overrides with `ansible_connection: local`.
+all:
+  children:
+    homelab_servers:
+      hosts:
+        homelab:
+          ansible_host: 10.8.0.6
+          ansible_port: 22

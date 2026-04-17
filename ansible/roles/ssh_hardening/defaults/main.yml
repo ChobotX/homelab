@@ -1,0 +1,33 @@
+---
+# Crypto algorithm lists — Mozilla OpenSSH Modern profile.
+# Extract as vars so a Mozilla update / FIPS tweak doesn't need template edits.
+ssh_hardening_kex_algorithms:
+  - curve25519-sha256
+  - curve25519-sha256@libssh.org
+  - diffie-hellman-group16-sha512
+  - diffie-hellman-group18-sha512
+  - diffie-hellman-group-exchange-sha256
+
+ssh_hardening_ciphers:
+  - chacha20-poly1305@openssh.com
+  - aes256-gcm@openssh.com
+  - aes128-gcm@openssh.com
+  - aes256-ctr
+  - aes128-ctr
+
+ssh_hardening_macs:
+  - hmac-sha2-512-etm@openssh.com
+  - hmac-sha2-256-etm@openssh.com
+  - umac-128-etm@openssh.com
+
+ssh_hardening_hostkey_algos:
+  - ssh-ed25519
+  - ssh-ed25519-cert-v01@openssh.com
+  - rsa-sha2-512
+  - rsa-sha2-256
+
+ssh_hardening_pubkey_algos:
+  - ssh-ed25519
+  - ssh-ed25519-cert-v01@openssh.com
+  - rsa-sha2-512
+  - rsa-sha2-256

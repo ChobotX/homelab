@@ -1,0 +1,23 @@
+---
+# Schedule: daily at 03:00 local time.
+backup_timer_oncalendar: "*-*-* 03:00:00"
+
+# Paths included in the restic backup set.
+backup_paths:
+  - /opt/vaultwarden/data
+  - /opt/traefik/letsencrypt
+  - /etc/wireguard
+  - /etc/ssh
+  - "/home/{{ admin_user }}"
+
+# Paths excluded (globs).
+backup_excludes:
+  - "*.tmp"
+  - "*.log"
+  - "**/.cache/**"
+  - "**/node_modules/**"
+
+# Retention for `restic forget`.
+backup_keep_daily: 7
+backup_keep_weekly: 4
+backup_keep_monthly: 6

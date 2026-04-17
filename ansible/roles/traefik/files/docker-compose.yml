@@ -1,0 +1,37 @@
+---
+# Traefik v3 — reverse proxy.
+# Ports bound to the WireGuard IP explicitly. Docker's iptables would otherwise bypass UFW.
+services:
+  traefik:
+    image: ${TRAEFIK_IMAGE}
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${WG_IP}:80:80"
+      - "${WG_IP}:443:443"
+    environment:
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN}
+    env_file:
+      - .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./dynamic:/etc/traefik/dynamic:ro
+      - ./letsencrypt:/letsencrypt
+    networks:
+      - proxy
+    labels:
+      traefik.enable: "true"
+      # Dashboard router (HTTPS only, behind basic auth).
+      traefik.http.routers.dashboard.rule: "Host(`${TRAEFIK_DASHBOARD_HOST}`)"
+      traefik.http.routers.dashboard.entrypoints: "websecure"
+      traefik.http.routers.dashboard.service: "api@internal"
+      traefik.http.routers.dashboard.tls: "true"
+      traefik.http.routers.dashboard.tls.certresolver: "cloudflare"
+      traefik.http.routers.dashboard.middlewares: "dashboard-auth@file,security-headers@file"
+
+networks:
+  proxy:
+    external: true

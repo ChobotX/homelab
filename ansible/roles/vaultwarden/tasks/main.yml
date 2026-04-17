@@ -1,0 +1,35 @@
+---
+- name: Ensure /opt/vaultwarden layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/vaultwarden
+    - /opt/vaultwarden/data
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/vaultwarden/.env
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart vaultwarden stack
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/vaultwarden/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart vaultwarden stack
+
+- name: Bring up Vaultwarden stack
+  community.docker.docker_compose_v2:
+    project_src: /opt/vaultwarden
+    state: present
+    pull: policy

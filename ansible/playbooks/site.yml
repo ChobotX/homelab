@@ -1,0 +1,97 @@
+---
+# Main site playbook — applies everything to the homelab host.
+#
+# Role order is intentional — prevents self-lockout and respects bootstrap deps:
+#   common         → base packages, log caps, auto security updates
+#   wireguard      → manage wg0.conf (never touches privatekey)
+#   ufw            → firewall BEFORE sshd re-tightening (avoid lockout from dropped rules)
+#   ssh_hardening  → final sshd config
+#   fail2ban       → needs sshd + ufw
+#   docker         → engine + compose + daemon.json
+#   traefik        → reverse proxy, bound to wg0 IP, Cloudflare DNS-01
+#   vaultwarden    → secret vault behind Traefik
+#   backup         → restic systemd timer (last, so backup sees steady state)
+
+- name: Configure homelab
+  hosts: homelab_servers
+  become: true
+  gather_facts: true
+
+  # Host-truth + credentials live on the box under /etc/homelab/.
+  # Bootstrap writes them once; nothing sensitive ever enters git.
+  # We slurp from the target (not the controller) so the playbook works
+  # whether Ansible runs on-box (self-hosted runner) or from a laptop over SSH.
+
+  vars:
+    # Every secret name the playbook may need. Missing files are OK —
+    # downstream tasks default to empty string.
+    homelab_secret_names:
+      - cloudflare_dns01_token
+      - vaultwarden_admin_token
+      - traefik_dashboard_basicauth
+      - restic_password
+      - restic_sftp_private_key
+      - restic_b2_account_id
+      - restic_b2_account_key
+      - restic_aws_access_key_id
+      - restic_aws_secret_access_key
+
+  pre_tasks:
+    - name: Read host config from /etc/homelab/config.yml on target
+      ansible.builtin.slurp:
+        src: /etc/homelab/config.yml
+      register: homelab_config_slurp
+
+    - name: Parse host config into a dict
+      ansible.builtin.set_fact:
+        homelab_config: "{{ homelab_config_slurp.content | b64decode | from_yaml }}"
+
+    - name: Apply each config key as a play var
+      ansible.builtin.set_fact:
+        "{{ item.key }}": "{{ item.value }}"
+      loop: "{{ homelab_config | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Read secret files from target (missing files are OK)
+      ansible.builtin.slurp:
+        src: "/etc/homelab/secrets/{{ item }}"
+      loop: "{{ homelab_secret_names }}"
+      register: homelab_secrets_slurp
+      failed_when: false
+      no_log: true
+
+    - name: Apply each secret as a play var (trim trailing newlines)
+      ansible.builtin.set_fact:
+        "{{ item.item }}": "{{ (item.content | default('') | b64decode).strip() }}"
+      loop: "{{ homelab_secrets_slurp.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.content is defined
+      no_log: true
+
+    - name: Default any missing optional secrets to empty string
+      ansible.builtin.set_fact:
+        "{{ item }}": "{{ vars[item] | default('') }}"
+      loop: "{{ homelab_secret_names }}"
+      no_log: true
+
+  roles:
+    - role: common
+      tags: [common, base]
+    - role: wireguard
+      tags: [wireguard, network]
+    - role: ufw
+      tags: [ufw, firewall]
+    - role: ssh_hardening
+      tags: [ssh, hardening]
+    - role: fail2ban
+      tags: [fail2ban, hardening]
+    - role: docker
+      tags: [docker]
+    - role: traefik
+      tags: [traefik, proxy]
+    - role: vaultwarden
+      tags: [vaultwarden, services]
+    - role: backup
+      tags: [backup]

@@ -1,0 +1,128 @@
+---
+- name: Ensure APT cache is fresh
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Ensure locale is generated
+  community.general.locale_gen:
+    name: "{{ locale }}"
+    state: present
+
+- name: Ensure journald drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Drop journald override with retention caps
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/retention.conf
+    mode: "0644"
+    owner: root
+    group: root
+    content: |
+      [Journal]
+      SystemMaxUse={{ journald_system_max_use }}
+      MaxRetentionSec={{ journald_max_retention_sec }}
+      Storage=persistent
+  notify: Restart journald
+
+- name: Install unattended-upgrades
+  ansible.builtin.apt:
+    name:
+      - unattended-upgrades
+      - apt-listchanges
+    state: present
+
+- name: Configure unattended-upgrades
+  ansible.builtin.template:
+    src: 50unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    mode: "0644"
+    owner: root
+    group: root
+
+- name: Enable periodic APT checks
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: "0644"
+    owner: root
+    group: root
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+
+- name: Pin packages against major upgrades via unattended-upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/preferences.d/10-homelab-pins
+    mode: "0644"
+    owner: root
+    group: root
+    content: |
+      # Managed by Ansible — prevents unattended auto-upgrades on these.
+      # Manual `apt upgrade` still works; only unattended is blocked.
+      {% for pkg in apt_pinned_packages %}
+      Package: {{ pkg }}
+      Pin: release *
+      Pin-Priority: 500
+      {% endfor %}
+
+- name: Apply baseline sysctl hardening
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_file: /etc/sysctl.d/90-homelab-hardening.conf
+    sysctl_set: true
+    reload: true
+  loop:
+    # Reject packets with impossible source addresses (spoofed traffic).
+    - { name: net.ipv4.conf.all.rp_filter, value: "1" }
+    - { name: net.ipv4.conf.default.rp_filter, value: "1" }
+    # SYN flood mitigation.
+    - { name: net.ipv4.tcp_syncookies, value: "1" }
+    # Ignore ICMP redirects — common MITM vector on untrusted LANs.
+    - { name: net.ipv4.conf.all.accept_redirects, value: "0" }
+    - { name: net.ipv4.conf.default.accept_redirects, value: "0" }
+    - { name: net.ipv6.conf.all.accept_redirects, value: "0" }
+    - { name: net.ipv6.conf.default.accept_redirects, value: "0" }
+    # No source-routed packets (ancient attack).
+    - { name: net.ipv4.conf.all.accept_source_route, value: "0" }
+    - { name: net.ipv4.conf.default.accept_source_route, value: "0" }
+    # Log unusual packets (e.g. Martians).
+    - { name: net.ipv4.conf.all.log_martians, value: "1" }
+    - { name: net.ipv4.conf.default.log_martians, value: "1" }
+    # Ignore ICMP broadcast (smurf attack mitigation).
+    - { name: net.ipv4.icmp_echo_ignore_broadcasts, value: "1" }
+    # Hide kernel pointers in /proc — harder for local privesc via info leak.
+    - { name: kernel.kptr_restrict, value: "2" }
+    # Restrict dmesg to privileged users.
+    - { name: kernel.dmesg_restrict, value: "1" }
+    # Disable the magic-SysRq key except for sync.
+    - { name: kernel.sysrq, value: "4" }
+  # In containers some of these are read-only; don't abort the whole run.
+  failed_when: false
+
+- name: Ensure systemd-timesyncd package is present
+  ansible.builtin.apt:
+    name: systemd-timesyncd
+    state: present
+
+- name: Ensure NTP is active (systemd-timesyncd)
+  ansible.builtin.systemd:
+    name: systemd-timesyncd
+    state: started
+    enabled: true

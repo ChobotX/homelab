@@ -1,0 +1,12 @@
+---
+dependencies:
+  - role: docker
+galaxy_info:
+  role_name: traefik
+  author: chobotx
+  description: Traefik reverse proxy with Cloudflare DNS-01 ACME
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]
