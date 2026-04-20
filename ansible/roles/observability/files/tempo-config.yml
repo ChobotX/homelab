@@ -40,6 +40,12 @@ storage:
       path: /var/tempo/wal
     local:
       path: /var/tempo/blocks
+    # Compactor deletes blocks between tenant-index builds; the builder's
+    # next scan ENOENTs on the just-deleted UUID and logs "failed to poll
+    # tenant blocks". Tolerate a few of those before escalating to error,
+    # and jitter the poll so concurrent builders don't race identically.
+    blocklist_poll_tolerate_consecutive_errors: 5
+    blocklist_poll_jitter_ms: 500
 
 overrides:
   defaults:
