@@ -134,7 +134,7 @@ valid_email      "$ALERTMANAGER_SMTP_FROM"         || die "ALERTMANAGER_SMTP_FRO
 valid_email      "$ALERTMANAGER_EMAIL_TO"          || die "ALERTMANAGER_EMAIL_TO invalid: $ALERTMANAGER_EMAIL_TO"
 
 # Runner defaults — derived, not user-facing.
-: "${GITHUB_RUNNER_VERSION:=2.321.0}"
+: "${GITHUB_RUNNER_VERSION:=2.333.1}"
 : "${GITHUB_RUNNER_USER:=gha-runner}"
 : "${GITHUB_RUNNER_LABELS:=self-hosted,linux,homelab}"
 : "${GITHUB_RUNNER_DIR:=/opt/actions-runner}"
