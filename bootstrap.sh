@@ -408,8 +408,10 @@ Restart=always
 RestartSec=5
 KillMode=process
 TimeoutStopSec=30
+# ProtectHome disabled: the runner writes to its own $HOME (.gitconfig,
+# pip --user, actions cache). ProtectSystem=full still blocks /usr,/boot,/etc
+# writes; explicit ReadWritePaths adds the runner workdir.
 ProtectSystem=full
-ProtectHome=true
 NoNewPrivileges=false
 ReadWritePaths=${GITHUB_RUNNER_DIR}
 
