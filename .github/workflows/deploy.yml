@@ -51,11 +51,8 @@ jobs:
           # job so nothing leaks across jobs.
           ref: ${{ github.sha }}
 
-      - name: Install ansible-core (user-local, no sudo)
-        run: |
-          core_version=$(cat .ansible-version)
-          python3 -m pip install --user --upgrade "ansible-core==${core_version}"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      # ansible-core is installed by bootstrap.sh (apt) and kept drift-proof
+      # by the common role. The runner just uses it — no per-deploy install.
 
       - name: Install Ansible collections
         working-directory: ansible

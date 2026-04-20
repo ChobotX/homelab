@@ -148,7 +148,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y --no-install-recommends \
   openssh-server wireguard wireguard-tools sudo curl ca-certificates jq \
-  openssh-client python3 python3-pip
+  openssh-client python3 ansible-core
 ok "packages installed"
 
 ### ---------- phase 2: admin user + SSH ----------
