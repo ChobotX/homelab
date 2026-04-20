@@ -2,16 +2,14 @@
 # Managed by Ansible.
 global:
   resolve_timeout: 5m
-{% if (alertmanager_smtp_host | default('')) | length > 0 %}
   smtp_smarthost: "{{ alertmanager_smtp_host }}"
   smtp_from: "{{ alertmanager_smtp_from }}"
   smtp_auth_username: "{{ alertmanager_smtp_from }}"
-  smtp_auth_password: "{{ alertmanager_smtp_password | default('') }}"
+  smtp_auth_password: "{{ alertmanager_smtp_password }}"
   smtp_require_tls: true
-{% endif %}
 
 route:
-  receiver: {{ 'email' if (alertmanager_smtp_host | default('')) | length > 0 else 'null' }}
+  receiver: email
   group_by: [alertname, severity]
   group_wait: 30s
   group_interval: 5m
@@ -19,20 +17,17 @@ route:
   routes:
     - matchers:
         - severity = critical
-      receiver: {{ 'email' if (alertmanager_smtp_host | default('')) | length > 0 else 'null' }}
+      receiver: email
       group_wait: 10s
       repeat_interval: 1h
 
 receivers:
-  - name: 'null'
-{% if (alertmanager_smtp_host | default('')) | length > 0 %}
   - name: email
     email_configs:
       - to: "{{ alertmanager_email_to }}"
         send_resolved: true
         headers:
           Subject: "[homelab] {% raw %}{{ .Status | toUpper }}{% endraw %} — {% raw %}{{ .CommonLabels.alertname }}{% endraw %}"
-{% endif %}
 
 inhibit_rules:
   - source_matchers: [severity = critical]

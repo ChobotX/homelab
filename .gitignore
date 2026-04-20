@@ -6,6 +6,10 @@
 *_private.key
 *.pem
 
+# Local bootstrap config — mirrors docs/bootstrap.env.example but filled in.
+# Contains tokens, hub IPs, etc. Keep on your laptop + USB, never in git.
+/bootstrap.env
+
 # SSH
 id_*
 !*.pub

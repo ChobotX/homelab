@@ -1,127 +1,72 @@
 #!/usr/bin/env bash
 # Homelab bootstrap — one-time console run on a fresh Ubuntu box.
 #
-# Idempotent. Safe to re-run.
+# Unattended. One invocation, one env file. No prompts, no pauses, no flags.
 #
-# What it does:
-#   1. Installs base packages, creates the admin user, authorises your laptop SSH key.
-#   2. Applies lockout-safe sshd hardening.
-#   3. Generates a WireGuard keypair + preshared key. Pauses while you add the
-#      resulting pubkey to your hub peer list.
-#   4. Prompts for / generates all secrets and writes:
-#        /etc/homelab/config.yml          host-truth values (mode 0644)
-#        /etc/homelab/secrets/<NAME>      one file per secret (mode 0400)
-#      Nothing sensitive ever enters the repo.
-#   5. Installs the self-hosted GitHub Actions runner and (optionally) kicks
-#      off the first `deploy.yml` run via the provided PAT.
+# Usage (from the homelab console, with USB mounted at /mnt):
+#   sudo ./bootstrap.sh --env /mnt/bootstrap.env
 #
-# CLI flags: see --help.
+# What it does (strictly the minimum needed before Ansible can take over):
+#   1. Validates every required env var is present + well-formed.
+#   2. Installs the base packages Ansible needs (ssh, wireguard, python3).
+#   3. Creates the admin user, authorises your laptop SSH key.
+#   4. Applies lockout-safe sshd hardening.
+#   5. Installs the pre-generated WireGuard private key (from USB path),
+#      derives the pubkey, generates a PSK, writes wg0.conf, brings it up.
+#   6. Waits for the first handshake — fails fast if the hub is not configured.
+#   7. Writes /etc/homelab/{config.yml,secrets/*} — dumb pipe from env vars.
+#   8. Installs the ephemeral JIT GitHub Actions runner.
+#   9. Dispatches deploy.yml — Ansible takes over from here.
+#
+# Everything else (htpasswd hashing, ssh-keyscan, random-secret generation,
+# HA scrape + SMTP wiring) is Ansible's job.
+#
+# Pre-requisites: hub WG peer entry MUST already be in place. See docs/bootstrap.md.
+
 set -euo pipefail
 umask 077
 
 ### ---------- CLI ----------
 
-YES=0; SKIP_RUNNER=0; SKIP_FIRST_RUN=0
-for arg in "$@"; do
-  case "$arg" in
-    -y|--yes)         YES=1 ;;
-    --skip-runner)    SKIP_RUNNER=1 ;;
-    --skip-first-run) SKIP_FIRST_RUN=1 ;;
-    -h|--help)
-      sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) echo "unknown arg: $arg" >&2; exit 2 ;;
+ENV_FILE=""
+print_help() {
+  sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
+  printf '\nFlags:\n  --env FILE   (required) bash-syntax env file with all inputs\n  -h, --help   show this help\n'
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --env)     ENV_FILE="${2:-}"; [ -z "$ENV_FILE" ] && { echo "--env requires FILE arg" >&2; exit 2; }; shift 2 ;;
+    --env=*)   ENV_FILE="${1#--env=}"; shift ;;
+    -h|--help) print_help; exit 0 ;;
+    *)         echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 
 ### ---------- output helpers ----------
 
-bold()  { printf '\033[1m%s\033[0m' "$*"; }
-ok()    { printf '\033[1;32m[ok]\033[0m %s\n' "$*"; }
-step()  { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
-note()  { printf '    %s\n' "$*"; }
-warn()  { printf '\n\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
-die()   { printf '\n\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
+bold() { printf '\033[1m%s\033[0m' "$*"; }
+ok()   { printf '\033[1;32m[ok]\033[0m %s\n' "$*"; }
+step() { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
+note() { printf '    %s\n' "$*"; }
+warn() { printf '\n\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
+die()  { printf '\n\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 
-pause() {
-  [ "$YES" = "1" ] && return 0
-  local prompt="${1:-Press Enter to continue (Ctrl-C to abort)}"
-  printf '\n%s: ' "$prompt"
-  IFS= read -r _ </dev/tty || true
-}
-
-trap 'rm -f /tmp/ghrt.json /tmp/ghdispatch.out /tmp/bootstrap.*.$$' EXIT INT TERM
+trap 'rm -f /tmp/ghdispatch.out' EXIT INT TERM
 
 ### ---------- validators ----------
 
-valid_user()      { [[ "$1" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; }
-valid_cidr()      { python3 -c "import sys, ipaddress; ipaddress.ip_network(sys.argv[1], strict=False)" "$1" 2>/dev/null; }
-valid_port()      { [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
-valid_hostport()  { [[ "$1" =~ ^[A-Za-z0-9.-]+:[0-9]+$ ]]; }
-valid_host()      { [[ "$1" =~ ^[A-Za-z0-9.-]+$ ]]; }
-valid_b64key()    { [[ "$1" =~ ^[A-Za-z0-9+/]{43}=$ ]] && [ "$(echo "$1" | base64 -d 2>/dev/null | wc -c)" = 32 ]; }
-valid_repo()      { [[ "$1" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; }
-valid_email()     { [[ "$1" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; }
-valid_domain()    { [[ "$1" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]]; }
-valid_sshpub()    {
-  ssh-keygen -l -f <(printf '%s\n' "$1") >/dev/null 2>&1
-}
+valid_user()       { [[ "$1" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; }
+valid_cidr()       { python3 -c "import sys, ipaddress; ipaddress.ip_network(sys.argv[1], strict=False)" "$1" 2>/dev/null; }
+valid_port()       { [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
+valid_hostport()   { [[ "$1" =~ ^[A-Za-z0-9.-]+:[0-9]+$ ]]; }
+valid_host()       { [[ "$1" =~ ^[A-Za-z0-9.-]+$ ]]; }
+valid_b64key()     { [[ "$1" =~ ^[A-Za-z0-9+/]{43}=$ ]] && [ "$(echo "$1" | base64 -d 2>/dev/null | wc -c)" = 32 ]; }
+valid_repo()       { [[ "$1" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; }
+valid_email()      { [[ "$1" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; }
+valid_domain()     { [[ "$1" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]]; }
+valid_sshpub()     { ssh-keygen -l -f <(printf '%s\n' "$1") >/dev/null 2>&1; }
 valid_restic_url() { [[ "$1" =~ ^(sftp:|s3:|b2:|azure:|gs:|rest:|/) ]]; }
-
-### ---------- prompt helper ----------
-# ASK VAR "question" [default] [validator_fn] [secret?]
-ASK() {
-  local var=$1 q=$2 def=${3:-} validator=${4:-} secret=${5:-0}
-  local cur; cur="${!var:-}"
-  if [ -n "$cur" ]; then
-    if [ -z "$validator" ] || "$validator" "$cur"; then
-      [ "$secret" = "1" ] && note "$var = (set via env)" || note "$var = $cur"
-      return 0
-    fi
-    warn "$var pre-set but failed validation; re-prompting"
-  fi
-  if [ "$YES" = "1" ]; then
-    die "$var not set and --yes given; export $var before running"
-  fi
-  local hint="" ans
-  [ -n "$def" ] && hint=" [$def]"
-  while :; do
-    if [ "$secret" = "1" ]; then
-      printf '    %s%s: ' "$q" "$hint" >&2
-      IFS= read -r -s ans </dev/tty; echo >&2
-    else
-      printf '    %s%s: ' "$q" "$hint" >&2
-      IFS= read -r ans </dev/tty
-    fi
-    [ -z "$ans" ] && ans="$def"
-    if [ -z "$ans" ]; then
-      warn "value required"; continue
-    fi
-    if [ -n "$validator" ] && ! "$validator" "$ans"; then
-      warn "invalid value"; continue
-    fi
-    printf -v "$var" '%s' "$ans"
-    export "${var?}"
-    return 0
-  done
-}
-
-# Like ASK but allows empty value (for optional secrets). No default fallback.
-ASK_OPT() {
-  local var=$1 q=$2 secret=${3:-0}
-  local cur; cur="${!var:-}"
-  if [ -n "$cur" ]; then return 0; fi
-  [ "$YES" = "1" ] && return 0
-  local ans
-  if [ "$secret" = "1" ]; then
-    printf '    %s (blank to skip): ' "$q" >&2
-    IFS= read -r -s ans </dev/tty; echo >&2
-  else
-    printf '    %s (blank to skip): ' "$q" >&2
-    IFS= read -r ans </dev/tty
-  fi
-  printf -v "$var" '%s' "${ans:-}"
-  export "${var?}"
-}
 
 ### ---------- banner ----------
 
@@ -135,94 +80,66 @@ cat <<'BANNER'
                                                                              |_|
 BANNER
 
-[ "$(id -u)" -eq 0 ] || die "must run as root (sudo ./bootstrap.sh)"
+[ "$(id -u)" -eq 0 ] || die "must run as root (sudo ./bootstrap.sh ...)"
+[ -n "$ENV_FILE" ]   || die "--env FILE is required (see --help)"
+[ -r "$ENV_FILE" ]   || die "env file unreadable: $ENV_FILE"
 
-### ---------- phase 0: collect host-truth config ----------
+### ---------- phase 0: load + validate env ----------
 
-step "Phase 0 — collecting host configuration"
+step "Phase 0 — loading + validating $ENV_FILE"
 
-note "Press Enter to accept defaults shown in [brackets]. Ctrl-C to abort."
-echo
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE"
+set +a
 
-: "${ADMIN_USER:=}"
-ASK ADMIN_USER        "admin username on this box" "chobotx" valid_user
-
-ASK LAPTOP_PUBKEY     "laptop SSH public key (one line)" "${LAPTOP_PUBKEY:-}" valid_sshpub
-
-ASK HOMELAB_DOMAIN    "base domain (e.g. homelab.example.com)" "" valid_domain
-ASK ACME_EMAIL        "ACME / Let's Encrypt contact email" "" valid_email
-
-ASK WG_ADDRESS        "homelab WG client address (CIDR)" "10.8.0.6/24" valid_cidr
-ASK WG_SUBNET         "WG subnet (CIDR)" "10.8.0.0/24" valid_cidr
-ASK WG_LISTEN_PORT    "WG listen port" "51820" valid_port
-ASK WG_PEER_PUBKEY    "hub public key (wg format, 44 chars ending =)" "" valid_b64key
-ASK WG_PEER_ENDPOINT  "hub endpoint (host:port)" "" valid_hostport
-ASK WG_PEER_ALLOWED   "subnets routed via hub (CIDR)" "$WG_SUBNET" valid_cidr
-
-### ---------- phase 0b: collect / generate secrets ----------
-
-step "Phase 0b — collecting / generating secrets"
-
-# External-service tokens — must be provided.
-ASK CLOUDFLARE_DNS01_TOKEN "Cloudflare DNS-01 API token (Zone:DNS:Edit)" "" "" 1
-
-# Traefik dashboard — prompt for plaintext password, generate htpasswd line.
-: "${TRAEFIK_DASHBOARD_USER:=admin}"
-ASK TRAEFIK_DASHBOARD_USER "Traefik dashboard username" "admin" valid_user
-if [ -z "${TRAEFIK_DASHBOARD_BASICAUTH:-}" ]; then
-  ASK TRAEFIK_DASHBOARD_PASSWORD "Traefik dashboard password (will be bcrypt-hashed)" "" "" 1
+REQUIRED_VARS=(
+  ADMIN_USER LAPTOP_PUBKEY HOMELAB_DOMAIN ACME_EMAIL
+  WG_ADDRESS WG_SUBNET WG_LISTEN_PORT
+  WG_PEER_PUBKEY WG_PEER_ENDPOINT WG_PEER_ALLOWED WG_PRIVATE_KEY_PATH
+  CLOUDFLARE_DNS01_TOKEN TRAEFIK_DASHBOARD_USER TRAEFIK_DASHBOARD_PASSWORD
+  RESTIC_REPO_URL RESTIC_SFTP_HOST RESTIC_SFTP_USER RESTIC_SFTP_PRIVATE_KEY_PATH
+  GITHUB_REPO GITHUB_TOKEN
+  HOMEASSISTANT_HOST HOMEASSISTANT_METRICS_TOKEN
+  ALERTMANAGER_SMTP_HOST ALERTMANAGER_SMTP_FROM ALERTMANAGER_EMAIL_TO ALERTMANAGER_SMTP_PASSWORD
+)
+missing=()
+for v in "${REQUIRED_VARS[@]}"; do
+  [ -z "${!v:-}" ] && missing+=("$v")
+done
+if [ ${#missing[@]} -gt 0 ]; then
+  die "empty/missing required vars in $ENV_FILE: ${missing[*]}"
 fi
 
-# Restic repo URL + backend-specific creds.
-ASK RESTIC_REPO_URL   "restic repo URL (sftp:/b2:/s3:/ etc.)" "" valid_restic_url
+# Format validation — single pass, precise error messages.
+valid_user       "$ADMIN_USER"                     || die "ADMIN_USER invalid: $ADMIN_USER"
+valid_sshpub     "$LAPTOP_PUBKEY"                  || die "LAPTOP_PUBKEY is not a parseable SSH public key"
+valid_domain     "$HOMELAB_DOMAIN"                 || die "HOMELAB_DOMAIN invalid: $HOMELAB_DOMAIN"
+valid_email      "$ACME_EMAIL"                     || die "ACME_EMAIL invalid: $ACME_EMAIL"
+valid_cidr       "$WG_ADDRESS"                     || die "WG_ADDRESS invalid: $WG_ADDRESS"
+valid_cidr       "$WG_SUBNET"                      || die "WG_SUBNET invalid: $WG_SUBNET"
+valid_port       "$WG_LISTEN_PORT"                 || die "WG_LISTEN_PORT invalid: $WG_LISTEN_PORT"
+valid_b64key     "$WG_PEER_PUBKEY"                 || die "WG_PEER_PUBKEY invalid (expect 44-char base64, ending =)"
+valid_hostport   "$WG_PEER_ENDPOINT"               || die "WG_PEER_ENDPOINT invalid: $WG_PEER_ENDPOINT"
+[ -r "$WG_PRIVATE_KEY_PATH" ]                      || die "WG_PRIVATE_KEY_PATH unreadable: $WG_PRIVATE_KEY_PATH"
+valid_user       "$TRAEFIK_DASHBOARD_USER"         || die "TRAEFIK_DASHBOARD_USER invalid: $TRAEFIK_DASHBOARD_USER"
+valid_restic_url "$RESTIC_REPO_URL"                || die "RESTIC_REPO_URL invalid: $RESTIC_REPO_URL"
+valid_host       "$RESTIC_SFTP_HOST"               || die "RESTIC_SFTP_HOST invalid: $RESTIC_SFTP_HOST"
+valid_user       "$RESTIC_SFTP_USER"               || die "RESTIC_SFTP_USER invalid: $RESTIC_SFTP_USER"
+[ -r "$RESTIC_SFTP_PRIVATE_KEY_PATH" ]             || die "RESTIC_SFTP_PRIVATE_KEY_PATH unreadable: $RESTIC_SFTP_PRIVATE_KEY_PATH"
+valid_repo       "$GITHUB_REPO"                    || die "GITHUB_REPO invalid: $GITHUB_REPO"
+valid_hostport   "$HOMEASSISTANT_HOST"             || die "HOMEASSISTANT_HOST invalid: $HOMEASSISTANT_HOST"
+valid_hostport   "$ALERTMANAGER_SMTP_HOST"         || die "ALERTMANAGER_SMTP_HOST invalid: $ALERTMANAGER_SMTP_HOST"
+valid_email      "$ALERTMANAGER_SMTP_FROM"         || die "ALERTMANAGER_SMTP_FROM invalid: $ALERTMANAGER_SMTP_FROM"
+valid_email      "$ALERTMANAGER_EMAIL_TO"          || die "ALERTMANAGER_EMAIL_TO invalid: $ALERTMANAGER_EMAIL_TO"
 
-RESTIC_BACKEND=${RESTIC_REPO_URL%%:*}
-case "$RESTIC_BACKEND" in
-  sftp)
-    # SFTP repo → we'll generate an ed25519 key if user doesn't already have one.
-    ASK RESTIC_SFTP_HOST "SFTP host for restic (e.g. u1234.storage.example.com)" "" valid_host
-    ASK RESTIC_SFTP_USER "SFTP user" "" valid_user
-    note "If you already use this SFTP server and don't want to rotate the authorized pubkey,"
-    note "give the path to the EXISTING private key file here. Blank = generate a new one."
-    ASK_OPT RESTIC_SFTP_PRIVATE_KEY_PATH "path to existing SFTP private key (readable by you)"
-    ;;
-  b2)
-    ASK_OPT RESTIC_B2_ACCOUNT_ID  "B2 account ID"  1
-    ASK_OPT RESTIC_B2_ACCOUNT_KEY "B2 account key" 1
-    ;;
-  s3)
-    ASK_OPT RESTIC_AWS_ACCESS_KEY_ID     "AWS access key id"     1
-    ASK_OPT RESTIC_AWS_SECRET_ACCESS_KEY "AWS secret access key" 1
-    ;;
-esac
+# Runner defaults — derived, not user-facing.
+: "${GITHUB_RUNNER_VERSION:=2.321.0}"
+: "${GITHUB_RUNNER_USER:=gha-runner}"
+: "${GITHUB_RUNNER_LABELS:=self-hosted,linux,homelab}"
+: "${GITHUB_RUNNER_DIR:=/opt/actions-runner}"
 
-if [ "$SKIP_RUNNER" = "0" ]; then
-  ASK GITHUB_REPO  "GitHub repo (owner/name)" "" valid_repo
-
-  note "Fine-grained PAT scoped to ${GITHUB_REPO} — required for ephemeral JIT runner registration."
-  note "Permissions: Administration: r/w, Actions: r/w, Contents: read."
-  note "https://github.com/settings/personal-access-tokens/new"
-  ASK GITHUB_TOKEN "GitHub PAT" "" "" 1
-
-  : "${GITHUB_RUNNER_VERSION:=2.321.0}"
-  : "${GITHUB_RUNNER_USER:=gha-runner}"
-  : "${GITHUB_RUNNER_LABELS:=self-hosted,linux,homelab}"
-  : "${GITHUB_RUNNER_DIR:=/opt/actions-runner}"
-fi
-
-# Observability — optional Home Assistant scrape + optional alert email.
-note "Observability — leave blank to skip HA scrape / email alerts."
-ASK_OPT HOMEASSISTANT_HOST         "Home Assistant host:port (e.g. 10.8.0.5:8123)"
-ASK_OPT HOMEASSISTANT_METRICS_TOKEN "Home Assistant long-lived access token" 1
-ASK_OPT ALERTMANAGER_SMTP_HOST     "SMTP relay host:port for alert emails (e.g. smtp.fastmail.com:587)"
-if [ -n "${ALERTMANAGER_SMTP_HOST:-}" ]; then
-  ASK ALERTMANAGER_SMTP_FROM       "SMTP From address" "" valid_email
-  ASK ALERTMANAGER_EMAIL_TO        "Alert destination email" "" valid_email
-  ASK_OPT ALERTMANAGER_SMTP_PASSWORD "SMTP password" 1
-fi
-
-echo
-ok "configuration captured"
+ok "env file validated"
 
 ### ---------- phase 1: base install ----------
 
@@ -231,7 +148,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y --no-install-recommends \
   openssh-server wireguard wireguard-tools sudo curl ca-certificates jq \
-  openssh-client apache2-utils openssl python3
+  openssh-client python3
 ok "packages installed"
 
 ### ---------- phase 2: admin user + SSH ----------
@@ -271,9 +188,9 @@ systemctl enable --now ssh
 systemctl reload ssh
 ok "sshd hardened"
 
-### ---------- phase 4: WireGuard keys ----------
+### ---------- phase 4: WireGuard ----------
 
-step "Phase 4 — ensuring WireGuard keypair + PSK"
+step "Phase 4 — installing WireGuard keypair + PSK"
 install -d -m 0700 /etc/wireguard
 pkfile=/etc/wireguard/privatekey
 pubfile=/etc/wireguard/publickey
@@ -281,9 +198,9 @@ pskfile=/etc/wireguard/hub_psk
 
 if [ -s "$pkfile" ]; then
   note "WG private key already exists — keeping it"
-  note "To rotate: sudo scripts/rotate-wg-key.sh (then update hub peer)"
 else
-  wg genkey > "$pkfile"; chmod 0600 "$pkfile"
+  install -m 0600 -o root -g root -T "$WG_PRIVATE_KEY_PATH" "$pkfile"
+  note "installed pre-generated WG private key from $WG_PRIVATE_KEY_PATH"
 fi
 wg pubkey < "$pkfile" > "$pubfile"; chmod 0644 "$pubfile"
 
@@ -291,7 +208,7 @@ if [ -s "$pskfile" ]; then
   note "WG preshared key already exists — keeping it"
 else
   wg genpsk > "$pskfile"; chmod 0600 "$pskfile"
-  ok "generated preshared key (must be added on hub too)"
+  note "generated preshared key (must be added on hub too)"
 fi
 
 HOMELAB_PUBKEY="$(cat "$pubfile")"
@@ -315,101 +232,31 @@ PersistentKeepalive = 25
 EOF
 chmod 0600 /etc/wireguard/wg0.conf
 systemctl enable wg-quick@wg0 >/dev/null 2>&1 || true
-ok "WG config written"
+systemctl restart wg-quick@wg0
+ok "wg0 up"
 
-### ---------- phase 5: hub manual step ----------
+### ---------- phase 5: handshake verify ----------
 
-step "Phase 5 — ADD HOMELAB AS PEER ON THE HUB"
-cat <<EOF
-
-Append to the hub's /etc/wireguard/wg0.conf:
-
-$(bold '────────── copy this block ──────────')
-[Peer]
-# homelab
-PublicKey = ${HOMELAB_PUBKEY}
-PresharedKey = ${HOMELAB_PSK}
-AllowedIPs = ${HOMELAB_CLIENT_IP}/32
-$(bold '─────────────────────────────────────')
-
-Then reload on the hub:
-    sudo wg syncconf wg0 <(sudo wg-quick strip wg0)
-
-Verify on the hub:
-    sudo wg show
-(should list 'homelab' peer)
-
-EOF
-pause "Press Enter once the peer is added on the hub"
-
-### ---------- phase 6: bring tunnel up + verify ----------
-
-step "Phase 6 — bringing up wg0 and verifying handshake"
-systemctl start wg-quick@wg0
-sleep 2
-if ! wg show wg0 >/dev/null 2>&1; then
-  die "wg0 interface didn't come up; check 'journalctl -u wg-quick@wg0'"
-fi
-handshake_ok=0
+step "Phase 5 — verifying handshake"
+note "homelab pubkey: $HOMELAB_PUBKEY"
+note "  (must already be a [Peer] on the hub with AllowedIPs = $HOMELAB_CLIENT_IP/32)"
 for i in $(seq 1 15); do
   hs=$(wg show wg0 latest-handshakes | awk 'NR==1{print $2}')
   if [[ -n "${hs:-}" && "$hs" =~ ^[0-9]+$ && "$hs" -gt 0 ]]; then
     ok "handshake established $(( $(date +%s) - hs ))s ago"
-    handshake_ok=1
     break
   fi
   sleep 2
   note "... waiting for first handshake (attempt $i/15)"
 done
-if [ "$handshake_ok" = 0 ]; then
-  warn "no handshake yet — check hub's AllowedIPs matches ${HOMELAB_CLIENT_IP}/32"
-  [ "$YES" = "1" ] && die "--yes mode: refusing to continue without handshake"
-  pause "Investigate, then press Enter to continue anyway"
+hs=$(wg show wg0 latest-handshakes | awk 'NR==1{print $2}')
+if [[ -z "${hs:-}" || ! "$hs" =~ ^[0-9]+$ || "$hs" -le 0 ]]; then
+  die "no WG handshake — is the homelab peer configured on the hub? (hub must have the pubkey above with AllowedIPs = $HOMELAB_CLIENT_IP/32)"
 fi
 
-### ---------- phase 6b: restic SFTP key (if SFTP) ----------
+### ---------- phase 6: write /etc/homelab/ ----------
 
-if [ "$RESTIC_BACKEND" = "sftp" ]; then
-  step "Phase 6b — SFTP key + known_hosts for restic"
-  sftp_priv=/tmp/bootstrap.sftp_key.$$
-  sftp_pub=${sftp_priv}.pub
-
-  # If user pointed at an existing key file, load its contents.
-  if [ -z "${RESTIC_SFTP_PRIVATE_KEY:-}" ] && [ -n "${RESTIC_SFTP_PRIVATE_KEY_PATH:-}" ]; then
-    [ -r "$RESTIC_SFTP_PRIVATE_KEY_PATH" ] \
-      || die "cannot read $RESTIC_SFTP_PRIVATE_KEY_PATH (permission or typo)"
-    note "using existing SFTP private key from $RESTIC_SFTP_PRIVATE_KEY_PATH"
-    RESTIC_SFTP_PRIVATE_KEY="$(cat "$RESTIC_SFTP_PRIVATE_KEY_PATH")"
-  fi
-
-  if [ -n "${RESTIC_SFTP_PRIVATE_KEY:-}" ]; then
-    printf '%s' "$RESTIC_SFTP_PRIVATE_KEY" > "$sftp_priv"
-    # Most keys lack a trailing newline — add one to satisfy ssh-keygen.
-    [ "$(tail -c1 "$sftp_priv" | wc -l)" -eq 1 ] || printf '\n' >> "$sftp_priv"
-    chmod 0400 "$sftp_priv"
-    ssh-keygen -y -f "$sftp_priv" > "$sftp_pub" \
-      || die "provided SFTP private key is not a valid SSH key"
-  else
-    ssh-keygen -t ed25519 -N '' -f "$sftp_priv" -C "homelab->${RESTIC_SFTP_HOST}" >/dev/null
-    cat <<EOF
-
-$(bold 'Add this public key to your SFTP provider authorized_keys:')
-
-$(cat "$sftp_pub")
-
-EOF
-    pause "Press Enter once the key is added on the SFTP provider"
-  fi
-  RESTIC_SFTP_PRIVATE_KEY="$(cat "$sftp_priv")"
-  RESTIC_SFTP_KNOWN_HOSTS="$(ssh-keyscan -t ed25519,rsa "$RESTIC_SFTP_HOST" 2>/dev/null || true)"
-  [ -n "$RESTIC_SFTP_KNOWN_HOSTS" ] || warn "ssh-keyscan returned no host keys for $RESTIC_SFTP_HOST"
-  rm -f "$sftp_priv" "$sftp_pub"
-  ok "SFTP key + known_hosts ready"
-fi
-
-### ---------- phase 7: write /etc/homelab/ ----------
-
-step "Phase 7 — writing /etc/homelab/{config.yml,secrets/}"
+step "Phase 6 — writing /etc/homelab/{config.yml,secrets/}"
 
 install -d -m 0755 -o root -g root /etc/homelab
 install -d -m 0700 -o root -g root /etc/homelab/secrets
@@ -424,140 +271,81 @@ acme_email: ${ACME_EMAIL}
 wireguard_address: ${WG_ADDRESS}
 wireguard_subnet: ${WG_SUBNET}
 wireguard_listen_port: ${WG_LISTEN_PORT}
-
 wireguard_peer_hub_pubkey: "${WG_PEER_PUBKEY}"
 wireguard_peer_hub_endpoint: "${WG_PEER_ENDPOINT}"
 wireguard_peer_hub_allowedips: "${WG_PEER_ALLOWED}"
 
 restic_repo_url: "${RESTIC_REPO_URL}"
-EOF
-if [ "$RESTIC_BACKEND" = "sftp" ]; then
-  cat >> /etc/homelab/config.yml <<EOF
 restic_sftp_host: "${RESTIC_SFTP_HOST}"
 restic_sftp_user: "${RESTIC_SFTP_USER}"
-EOF
-fi
-if [ "$SKIP_RUNNER" = "0" ]; then
-  cat >> /etc/homelab/config.yml <<EOF
 
-# Self-hosted runner identity — used by the JIT wrapper.
+traefik_dashboard_user: "${TRAEFIK_DASHBOARD_USER}"
+
 github_repo: "${GITHUB_REPO}"
 github_runner_labels: "${GITHUB_RUNNER_LABELS}"
-EOF
-fi
-if [ -n "${HOMEASSISTANT_HOST:-}" ]; then
-  cat >> /etc/homelab/config.yml <<EOF
 
-# Observability — Home Assistant scrape target.
 homeassistant_host: "${HOMEASSISTANT_HOST}"
-EOF
-fi
-if [ -n "${ALERTMANAGER_SMTP_HOST:-}" ]; then
-  cat >> /etc/homelab/config.yml <<EOF
-
-# Observability — alert email routing.
 alertmanager_smtp_host: "${ALERTMANAGER_SMTP_HOST}"
 alertmanager_smtp_from: "${ALERTMANAGER_SMTP_FROM}"
-alertmanager_email_to:  "${ALERTMANAGER_EMAIL_TO}"
+alertmanager_email_to: "${ALERTMANAGER_EMAIL_TO}"
 EOF
-fi
 chmod 0644 /etc/homelab/config.yml
 
 write_secret() {
   local name="$1" value="$2"
-  [ -z "$value" ] && return 0
   install -m 0400 -o root -g root -T <(printf '%s' "$value") "/etc/homelab/secrets/$name"
 }
 
-# Generate what we can; persist what the user typed.
-: "${VAULTWARDEN_ADMIN_TOKEN:=$(openssl rand -base64 48 | tr -d '\n=/+' | head -c 64)}"
-: "${RESTIC_PASSWORD:=$(openssl rand -base64 48 | tr -d '\n=/+' | head -c 48)}"
-: "${GRAFANA_ADMIN_PASSWORD:=$(openssl rand -base64 24 | tr -d '\n=/+' | head -c 32)}"
-
-if [ -z "${TRAEFIK_DASHBOARD_BASICAUTH:-}" ]; then
-  # htpasswd -nb generates "user:$2y$...", we double $ for docker-compose env interpolation.
-  TRAEFIK_DASHBOARD_BASICAUTH="$(htpasswd -nbB "$TRAEFIK_DASHBOARD_USER" "$TRAEFIK_DASHBOARD_PASSWORD" | sed -e 's/\$/\$\$/g')"
-fi
-
-write_secret cloudflare_dns01_token       "$CLOUDFLARE_DNS01_TOKEN"
-write_secret vaultwarden_admin_token      "$VAULTWARDEN_ADMIN_TOKEN"
-write_secret traefik_dashboard_basicauth  "$TRAEFIK_DASHBOARD_BASICAUTH"
-write_secret restic_password              "$RESTIC_PASSWORD"
-if [ "$RESTIC_BACKEND" = "sftp" ]; then
-  write_secret restic_sftp_private_key    "$RESTIC_SFTP_PRIVATE_KEY"
-  write_secret restic_sftp_known_hosts    "${RESTIC_SFTP_KNOWN_HOSTS:-}"
-fi
-write_secret restic_b2_account_id         "${RESTIC_B2_ACCOUNT_ID:-}"
-write_secret restic_b2_account_key        "${RESTIC_B2_ACCOUNT_KEY:-}"
-write_secret restic_aws_access_key_id     "${RESTIC_AWS_ACCESS_KEY_ID:-}"
-write_secret restic_aws_secret_access_key "${RESTIC_AWS_SECRET_ACCESS_KEY:-}"
-write_secret grafana_admin_password       "$GRAFANA_ADMIN_PASSWORD"
-write_secret alertmanager_smtp_password   "${ALERTMANAGER_SMTP_PASSWORD:-}"
-write_secret homeassistant_metrics_token  "${HOMEASSISTANT_METRICS_TOKEN:-}"
-[ "$SKIP_RUNNER" = "0" ] && write_secret github_pat "$GITHUB_TOKEN"
+write_secret cloudflare_dns01_token      "$CLOUDFLARE_DNS01_TOKEN"
+write_secret traefik_dashboard_password  "$TRAEFIK_DASHBOARD_PASSWORD"
+write_secret restic_sftp_private_key     "$(cat "$RESTIC_SFTP_PRIVATE_KEY_PATH")"
+write_secret github_pat                  "$GITHUB_TOKEN"
+write_secret homeassistant_metrics_token "$HOMEASSISTANT_METRICS_TOKEN"
+write_secret alertmanager_smtp_password  "$ALERTMANAGER_SMTP_PASSWORD"
 ok "/etc/homelab/ populated"
 
-cat <<EOF
+### ---------- phase 7: GitHub Actions runner (ephemeral JIT) ----------
 
-$(bold 'Save these somewhere safe — you will need them for first login:')
-  Vaultwarden /admin token: ${VAULTWARDEN_ADMIN_TOKEN}
-  Traefik dashboard user  : ${TRAEFIK_DASHBOARD_USER}
-  (Traefik dashboard password was what you typed)
-  restic password         : ${RESTIC_PASSWORD}
-  Grafana admin (user: admin): ${GRAFANA_ADMIN_PASSWORD}
+step "Phase 7 — installing ephemeral JIT self-hosted GitHub Actions runner"
 
-EOF
-pause "Press Enter when you've recorded them"
+if ! id -u "$GITHUB_RUNNER_USER" >/dev/null 2>&1; then
+  useradd -r -m -s /bin/bash "$GITHUB_RUNNER_USER"
+fi
+# NOPASSWD:ALL is required for Ansible become. The wipe-per-job flow below
+# bounds blast radius — the runner's workspace is deleted after each job.
+printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$GITHUB_RUNNER_USER" > "/etc/sudoers.d/91-${GITHUB_RUNNER_USER}"
+chmod 0440 "/etc/sudoers.d/91-${GITHUB_RUNNER_USER}"
+visudo -cf "/etc/sudoers.d/91-${GITHUB_RUNNER_USER}" >/dev/null
 
-### ---------- phase 8: GitHub Actions runner (ephemeral JIT) ----------
+case "$(dpkg --print-architecture)" in
+  amd64) arch=x64 ;;
+  arm64) arch=arm64 ;;
+  *) die "unsupported arch $(dpkg --print-architecture)" ;;
+esac
 
-if [ "$SKIP_RUNNER" = "1" ]; then
-  warn "skipping runner install (--skip-runner)"
-else
-  step "Phase 8 — installing ephemeral JIT self-hosted GitHub Actions runner"
-
-  if ! id -u "$GITHUB_RUNNER_USER" >/dev/null 2>&1; then
-    useradd -r -m -s /bin/bash "$GITHUB_RUNNER_USER"
+install -d -o "$GITHUB_RUNNER_USER" -g "$GITHUB_RUNNER_USER" -m 0750 "$GITHUB_RUNNER_DIR"
+if [ ! -x "$GITHUB_RUNNER_DIR/run.sh" ]; then
+  tarball="actions-runner-linux-${arch}-${GITHUB_RUNNER_VERSION}.tar.gz"
+  url="https://github.com/actions/runner/releases/download/v${GITHUB_RUNNER_VERSION}/${tarball}"
+  if [ ! -s "/tmp/$tarball" ]; then
+    note "downloading $url"
+    curl -fsSL -o "/tmp/$tarball" "$url"
   fi
-  # NOPASSWD:ALL is required for Ansible become. The wipe-per-job flow below
-  # bounds blast radius — the runner's workspace is deleted after each job.
-  printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$GITHUB_RUNNER_USER" > "/etc/sudoers.d/91-${GITHUB_RUNNER_USER}"
-  chmod 0440 "/etc/sudoers.d/91-${GITHUB_RUNNER_USER}"
-  visudo -cf "/etc/sudoers.d/91-${GITHUB_RUNNER_USER}" >/dev/null
+  # Extract as root (bootstrap's umask 077 leaves the tarball 0600 and
+  # unreadable by gha-runner). Chown the tree afterwards.
+  tar -xzf "/tmp/$tarball" -C "$GITHUB_RUNNER_DIR"
+  chown -R "${GITHUB_RUNNER_USER}:${GITHUB_RUNNER_USER}" "$GITHUB_RUNNER_DIR"
+  rm -f "/tmp/$tarball"
+fi
+[ -x "$GITHUB_RUNNER_DIR/bin/installdependencies.sh" ] && \
+  "$GITHUB_RUNNER_DIR/bin/installdependencies.sh" >/dev/null || true
 
-  case "$(dpkg --print-architecture)" in
-    amd64) arch=x64 ;;
-    arm64) arch=arm64 ;;
-    *) die "unsupported arch $(dpkg --print-architecture)" ;;
-  esac
+# Give the runner user read access to the PAT (root:gha-runner 0440).
+chown "root:${GITHUB_RUNNER_USER}" /etc/homelab/secrets/github_pat
+chmod 0440 /etc/homelab/secrets/github_pat
 
-  install -d -o "$GITHUB_RUNNER_USER" -g "$GITHUB_RUNNER_USER" -m 0750 "$GITHUB_RUNNER_DIR"
-  if [ ! -x "$GITHUB_RUNNER_DIR/run.sh" ]; then
-    tarball="actions-runner-linux-${arch}-${GITHUB_RUNNER_VERSION}.tar.gz"
-    url="https://github.com/actions/runner/releases/download/v${GITHUB_RUNNER_VERSION}/${tarball}"
-    # Reuse an existing download if present (recovery from prior failures).
-    if [ ! -s "/tmp/$tarball" ]; then
-      note "downloading $url"
-      curl -fsSL -o "/tmp/$tarball" "$url"
-    fi
-    # Extract as root (bootstrap's umask 077 leaves the tarball 0600 and
-    # unreadable by gha-runner). Chown the tree afterwards.
-    tar -xzf "/tmp/$tarball" -C "$GITHUB_RUNNER_DIR"
-    chown -R "${GITHUB_RUNNER_USER}:${GITHUB_RUNNER_USER}" "$GITHUB_RUNNER_DIR"
-    rm -f "/tmp/$tarball"
-  fi
-  [ -x "$GITHUB_RUNNER_DIR/bin/installdependencies.sh" ] && \
-    "$GITHUB_RUNNER_DIR/bin/installdependencies.sh" >/dev/null || true
-
-  # Give the runner user read access to the PAT (root:gha-runner 0440).
-  # config.yml is already 0644 — runner can read it.
-  chown "root:${GITHUB_RUNNER_USER}" /etc/homelab/secrets/github_pat
-  chmod 0440 /etc/homelab/secrets/github_pat
-
-  # JIT wrapper — fetches a one-shot JIT config from GitHub, then execs the
-  # runner. Runner exits after one job, systemd restarts us, we re-register.
-  install -d -m 0755 /opt/homelab/bin
-  cat > /opt/homelab/bin/gha-runner-jit.sh <<'WRAPPER'
+install -d -m 0755 /opt/homelab/bin
+cat > /opt/homelab/bin/gha-runner-jit.sh <<'WRAPPER'
 #!/usr/bin/env bash
 # Ephemeral JIT runner wrapper — one job per registration, no persistent state.
 set -euo pipefail
@@ -574,7 +362,6 @@ labels=$(awk -F'"' '/^github_runner_labels:/ {print $2; exit}' "$CONFIG")
 PAT=$(cat "$PAT_FILE")
 [ -n "$PAT" ] || { echo "$PAT_FILE empty" >&2; exit 1; }
 
-# Labels as JSON array
 IFS=',' read -ra lbl_arr <<<"$labels"
 lbl_json=$(printf '"%s",' "${lbl_arr[@]}")
 lbl_json="[${lbl_json%,}]"
@@ -600,9 +387,9 @@ rm -rf "$RUNNER_DIR/_work" "$RUNNER_DIR/_diag" 2>/dev/null || true
 cd "$RUNNER_DIR"
 exec ./run.sh --jitconfig "$jit"
 WRAPPER
-  chmod 0755 /opt/homelab/bin/gha-runner-jit.sh
+chmod 0755 /opt/homelab/bin/gha-runner-jit.sh
 
-  cat > /etc/systemd/system/gha-runner-jit.service <<EOF
+cat > /etc/systemd/system/gha-runner-jit.service <<EOF
 [Unit]
 Description=GitHub Actions ephemeral JIT runner
 After=network-online.target
@@ -618,55 +405,42 @@ Restart=always
 RestartSec=5
 KillMode=process
 TimeoutStopSec=30
-# Narrow privileges outside the runner's work dir.
 ProtectSystem=full
 ProtectHome=true
 NoNewPrivileges=false
-# Runner workspace must be writable.
 ReadWritePaths=${GITHUB_RUNNER_DIR}
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-  # Drop any pre-existing persistent registration service.
-  if systemctl list-units --type=service --no-legend | grep -q 'actions.runner\.'; then
-    note "found legacy persistent runner service — stopping + disabling"
-    for u in $(systemctl list-units --type=service --no-legend | awk '/actions\.runner\./ {print $1}'); do
-      systemctl stop "$u" 2>/dev/null || true
-      systemctl disable "$u" 2>/dev/null || true
-    done
-  fi
-
-  systemctl daemon-reload
-  systemctl enable --now gha-runner-jit.service
-  ok "ephemeral JIT runner service active"
+# Drop any pre-existing persistent registration service.
+if systemctl list-units --type=service --no-legend | grep -q 'actions.runner\.'; then
+  note "found legacy persistent runner service — stopping + disabling"
+  for u in $(systemctl list-units --type=service --no-legend | awk '/actions\.runner\./ {print $1}'); do
+    systemctl stop "$u" 2>/dev/null || true
+    systemctl disable "$u" 2>/dev/null || true
+  done
 fi
 
-### ---------- phase 9: optional first-run trigger ----------
+systemctl daemon-reload
+systemctl enable --now gha-runner-jit.service
+ok "ephemeral JIT runner service active"
 
-if [ "$SKIP_FIRST_RUN" = "1" ]; then
-  warn "skipping first-run trigger (--skip-first-run)"
-elif [ "$SKIP_RUNNER" = "1" ]; then
-  warn "runner not installed → cannot trigger deploy.yml"
-elif [ -z "${GITHUB_TOKEN:-}" ]; then
-  note "no PAT given → first deploy will fire next time you push to main"
-else
-  step "Phase 9 — dispatching first deploy.yml run"
-  http=$(curl -s -o /tmp/ghdispatch.out -w '%{http_code}' \
-    -X POST \
-    -H "Accept: application/vnd.github+json" \
-    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-    -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/deploy.yml/dispatches" \
-    -d '{"ref":"main"}')
-  if [ "$http" = "204" ]; then
-    ok "deploy.yml dispatched"
-    note "watch → https://github.com/${GITHUB_REPO}/actions"
-  else
-    warn "dispatch returned HTTP $http: $(cat /tmp/ghdispatch.out 2>/dev/null)"
-  fi
+### ---------- phase 8: dispatch first deploy ----------
+
+step "Phase 8 — dispatching first deploy.yml run"
+http=$(curl -s -o /tmp/ghdispatch.out -w '%{http_code}' \
+  -X POST \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  "https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/deploy.yml/dispatches" \
+  -d '{"ref":"main"}')
+if [ "$http" != "204" ]; then
+  die "dispatch returned HTTP $http: $(cat /tmp/ghdispatch.out 2>/dev/null)"
 fi
+ok "deploy.yml dispatched — watch → https://github.com/${GITHUB_REPO}/actions"
 
 ### ---------- final summary ----------
 
@@ -676,18 +450,14 @@ cat <<EOF
   Homelab WG IP     : ${HOMELAB_CLIENT_IP}
   Homelab WG pubkey : ${HOMELAB_PUBKEY}
   Domain            : ${HOMELAB_DOMAIN}
-  Self-hosted runner: $([ "$SKIP_RUNNER" = "1" ] && echo skipped || echo "registered with ${GITHUB_REPO}")
+  Self-hosted runner: registered with ${GITHUB_REPO}
 
-From now on every push to main triggers deploy.yml on this box.
+Ansible takes over from here. Every push to main triggers deploy.yml on this box.
 Status → https://github.com/${GITHUB_REPO}/actions
 
 Troubleshooting:
   - tunnel:   sudo wg show
   - sshd:     systemctl status ssh
-  - runner:   systemctl status 'actions.runner.*'
-  - logs:     journalctl -u wg-quick@wg0 -u 'actions.runner.*'
-
-Editing secrets later:
-  sudo $EDITOR /etc/homelab/config.yml
-  sudo install -m 0400 -T <(printf '%s' NEWVALUE) /etc/homelab/secrets/NAME
+  - runner:   systemctl status gha-runner-jit
+  - logs:     journalctl -u wg-quick@wg0 -u gha-runner-jit
 EOF

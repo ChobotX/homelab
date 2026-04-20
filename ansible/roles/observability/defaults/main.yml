@@ -14,7 +14,7 @@ observability_prometheus_scrape_interval: "30s"
 observability_loki_retention_hours: 336
 observability_tempo_retention_hours: 168
 
-# Optional Home Assistant scrape path. Host (homeassistant_host) + token come from /etc/homelab/.
+# Home Assistant scrape path. Host + token are required, come from /etc/homelab/.
 observability_homeassistant_metrics_path: "/api/prometheus"
 
 # Container resource caps (single-host budget).

@@ -106,13 +106,26 @@ wireguard_peer_hub_endpoint: "hub.invalid:51820"
 wireguard_peer_hub_allowedips: "10.0.0.0/24"
 
 restic_repo_url: "/tmp/restic-test-repo"
+restic_sftp_host: "sftp.invalid"
+restic_sftp_user: "testuser"
+
+traefik_dashboard_user: admin
+
+github_repo: "owner/homelab"
+github_runner_labels: "self-hosted,linux,homelab"
+
+homeassistant_host: "10.0.0.3:8123"
+alertmanager_smtp_host: "smtp.invalid:587"
+alertmanager_smtp_from: "noreply@test.invalid"
+alertmanager_email_to: "alerts@test.invalid"
 EOF
 
-    # Minimal secrets — test values only.
+    # Minimal secrets — test values only; role-generated ones get created on apply.
     printf test > /etc/homelab/secrets/cloudflare_dns01_token
-    printf test > /etc/homelab/secrets/vaultwarden_admin_token
-    printf "admin:\$\$2y\$\$05\$\$abcdefghijklmnopqrstuv" > /etc/homelab/secrets/traefik_dashboard_basicauth
-    printf test-password > /etc/homelab/secrets/restic_password
+    printf test > /etc/homelab/secrets/traefik_dashboard_password
+    printf test > /etc/homelab/secrets/restic_sftp_private_key
+    printf test > /etc/homelab/secrets/homeassistant_metrics_token
+    printf test > /etc/homelab/secrets/alertmanager_smtp_password
     chmod 0400 /etc/homelab/secrets/*
 
     # Point inventory at docker connection.

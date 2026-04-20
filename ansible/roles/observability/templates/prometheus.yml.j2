@@ -40,13 +40,11 @@ scrape_configs:
       - targets: ['alertmanager:9093']
     metrics_path: /metrics
 
-{% if (homeassistant_host | default('')) | length > 0 %}
   - job_name: homeassistant
     scrape_interval: 60s
     metrics_path: {{ observability_homeassistant_metrics_path }}
     scheme: http
     authorization:
-      credentials: "{{ homeassistant_metrics_token | default('') }}"
+      credentials: "{{ homeassistant_metrics_token }}"
     static_configs:
       - targets: ['{{ homeassistant_host }}']
-{% endif %}

@@ -54,6 +54,20 @@
     name: "{{ observability_network }}"
     state: present
 
+- name: Generate Grafana admin password (idempotent; cached in /etc/homelab/secrets/)
+  ansible.builtin.set_fact:
+    observability_grafana_admin_password: >-
+      {{ lookup('ansible.builtin.password',
+                '/etc/homelab/secrets/grafana_admin_password length=32 chars=ascii_letters,digits') }}
+  no_log: true
+
+- name: Lock down grafana_admin_password file perms
+  ansible.builtin.file:
+    path: /etc/homelab/secrets/grafana_admin_password
+    owner: root
+    group: root
+    mode: "0400"
+
 - name: Template .env
   ansible.builtin.template:
     src: env.j2

@@ -24,21 +24,15 @@
   # whether Ansible runs on-box (self-hosted runner) or from a laptop over SSH.
 
   vars:
-    # Every secret name the playbook may need. Missing files are OK —
-    # downstream tasks default to empty string.
+    # Secrets that bootstrap writes and downstream roles slurp. Role-generated
+    # secrets (vaultwarden_admin_token, restic_password, grafana_admin_password)
+    # are not listed here — the roles read them directly via lookup('password').
     homelab_secret_names:
       - cloudflare_dns01_token
-      - vaultwarden_admin_token
-      - traefik_dashboard_basicauth
-      - restic_password
+      - traefik_dashboard_password
       - restic_sftp_private_key
-      - restic_b2_account_id
-      - restic_b2_account_key
-      - restic_aws_access_key_id
-      - restic_aws_secret_access_key
-      - grafana_admin_password
-      - alertmanager_smtp_password
       - homeassistant_metrics_token
+      - alertmanager_smtp_password
 
   # pre_tasks are tagged `always` so they fire even with --tags <role>.
   pre_tasks:

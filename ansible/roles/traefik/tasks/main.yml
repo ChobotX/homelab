@@ -31,6 +31,29 @@
     name: proxy
     state: present
 
+# htpasswd lives in apache2-utils. No passlib dependency so the role keeps
+# working on a freshly-bootstrapped box with nothing but base packages.
+- name: Ensure apache2-utils is present (provides htpasswd)
+  ansible.builtin.apt:
+    name: apache2-utils
+    state: present
+
+- name: Generate Traefik dashboard basicauth line
+  ansible.builtin.command:
+    argv:
+      - htpasswd
+      - -nbB
+      - "{{ traefik_dashboard_user }}"
+      - "{{ traefik_dashboard_password }}"
+  register: traefik_dashboard_basicauth_raw
+  changed_when: false
+  no_log: true
+
+- name: Export basicauth with docker-compose-safe $ escaping
+  ansible.builtin.set_fact:
+    traefik_dashboard_basicauth: "{{ traefik_dashboard_basicauth_raw.stdout | regex_replace('\\$', '$$') }}"
+  no_log: true
+
 - name: Template traefik.yml (static config)
   ansible.builtin.template:
     src: traefik.yml.j2
