@@ -44,6 +44,7 @@ storage:
     # next scan ENOENTs on the just-deleted UUID and logs "failed to poll
     # tenant blocks". Tolerate a few of those before escalating to error,
     # and jitter the poll so concurrent builders don't race identically.
+    # Tempo single-binary, local backend — compactor + ingester in-process.
     blocklist_poll_tolerate_consecutive_errors: 5
     blocklist_poll_jitter_ms: 500
 
