@@ -12,14 +12,19 @@ PATHS=(
 )
 
 # Backup
+# --host is pinned so snapshots stay tagged `homelab` even if the hostname drifts,
+# and so forget --host homelab below can't touch other clients sharing this repo
+# (e.g. Home Assistant pushing into /restic with --host homeassistant).
 restic backup \
+  --host homelab \
   --tag scheduled \
   --exclude-file /etc/restic/excludes.txt \
   --one-file-system \
   "${PATHS[@]}"
 
-# Prune policy
+# Prune policy — host-scoped so co-tenants in the repo are not pruned.
 restic forget \
+  --host homelab \
   --tag scheduled \
   --keep-daily   {{ backup_keep_daily }} \
   --keep-weekly  {{ backup_keep_weekly }} \

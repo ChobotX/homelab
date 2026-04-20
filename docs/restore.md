@@ -65,6 +65,22 @@ From your laptop (WG connected):
 
 Check Vaultwarden: open `https://vault.<domain>`, log in with your existing Bitwarden account (data is in the restored `/opt/vaultwarden/data`).
 
+## Restoring Home Assistant
+
+HA backups live in the same restic repo under `--host homeassistant`, `--tag scheduled,ha`. Each snapshot contains one or more HA-native tarballs under `/backup/`.
+
+```bash
+# From the homelab (or any box with the restic repo env + password)
+sudo bash -c '. /etc/restic/restic.env && restic snapshots --host homeassistant --tag scheduled'
+
+# Extract to a scratch dir
+mkdir -p /tmp/ha-restore
+sudo bash -c '. /etc/restic/restic.env && restic restore <snapshot-id> --host homeassistant --target /tmp/ha-restore'
+ls /tmp/ha-restore/backup/*.tar
+```
+
+Copy the chosen tar to the HAOS box and import via the UI (Settings → System → Backups → Upload). HAOS handles the in-place restore and reboot itself.
+
 ## Testing the DR plan
 
 Do a restore drill at least once on a throwaway VM. Walk steps 1-6. If it takes more than an hour or hits any blocker, fix the runbook *before* you need it for real.

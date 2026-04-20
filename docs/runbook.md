@@ -68,6 +68,48 @@ sudo install -m 0400 -T <(openssl rand -base64 24) /etc/homelab/secrets/grafana_
 gh workflow run deploy.yml --ref main -f tags=observability
 ```
 
+## Home Assistant — off-site backups (shared restic repo)
+
+HAOS (RPi4) pushes its native `.tar` backups into the same restic repo the homelab uses, separated by `--host homeassistant` so each client's retention is independent.
+
+**Install (one-time, on the HA box via UI):**
+
+1. Supervisor → Add-on store → install a community **Restic** add-on (pin the version).
+2. In HA, generate a dedicated ed25519 SSH key for the add-on (keep the private key inside the add-on config, never in this repo).
+3. Append HA's pubkey to the Storage Box's `authorized_keys`:
+   ```bash
+   # From the laptop
+   cat ha-restic.pub | ssh -p 23 u578479@u578479.your-storagebox.de 'cat >> .ssh/authorized_keys'
+   ```
+4. Fetch the restic password once (from the homelab, printed to stdout — do not commit):
+   ```bash
+   sudo cat /etc/homelab/secrets/restic_password
+   ```
+   Paste it into the add-on's `RESTIC_PASSWORD`.
+5. Add-on config:
+   - repo: `sftp:u578479@u578479.your-storagebox.de:/restic`
+   - pre-backup hook: `ha backups new --name scheduled-offsite`
+   - paths: `/backup`
+   - tags: `scheduled,ha`
+   - host: `homeassistant`
+   - schedule: `02:30` daily (stays clear of the homelab's `03:00 + 15 min jitter` window)
+   - forget: `--host homeassistant --tag scheduled --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune`
+
+**Verify first cycle (from the homelab):**
+
+```bash
+sudo bash -c '. /etc/restic/restic.env && restic snapshots --host homeassistant'
+sudo bash -c '. /etc/restic/restic.env && restic snapshots --host homelab | tail'
+```
+
+Both lists must be non-empty after day 1. If homelab's list is empty, the `--host homelab` scoping in `restic-backup.sh` regressed — see `ansible/roles/backup/templates/restic-backup.sh.j2`.
+
+**Rotate HA's SSH key:**
+
+Generate new key on HA add-on; replace HA's entry in `.ssh/authorized_keys` on the Storage Box (port 23). Homelab's key is untouched.
+
+**Critical invariant:** both clients must always call `restic forget` with their own `--host` tag. Dropping it on either side will prune the other client's snapshots. The homelab's scoping lives in `ansible/roles/backup/templates/restic-backup.sh.j2`.
+
 ## Home Assistant — ship logs + metrics
 
 **Metrics**: on the HA box, create a Long-Lived Access Token (Profile → Security → Long-Lived Access Tokens). Put it in `/etc/homelab/secrets/homeassistant_metrics_token` on the homelab, and add `homeassistant_host: "10.8.0.5:8123"` to `/etc/homelab/config.yml`. Prometheus scrape kicks in on next deploy.
