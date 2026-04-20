@@ -259,7 +259,10 @@ fi
 step "Phase 6 — writing /etc/homelab/{config.yml,secrets/}"
 
 install -d -m 0755 -o root -g root /etc/homelab
-install -d -m 0700 -o root -g root /etc/homelab/secrets
+# 0701 (traverse-only for others) so the unprivileged gha-runner user can open
+# specific secret files (mode 0440 root:gha-runner). 0700 would block traversal
+# regardless of per-file perms.
+install -d -m 0701 -o root -g root /etc/homelab/secrets
 
 cat > /etc/homelab/config.yml <<EOF
 ---
