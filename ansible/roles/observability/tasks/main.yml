@@ -54,6 +54,15 @@
     name: "{{ observability_network }}"
     state: present
 
+# Observability runs before traefik (intentional — traefik needs the
+# observability network to exist when it starts). Its compose also attaches
+# Grafana to the `proxy` network so Traefik can route to it. Create that
+# network here too; the traefik role is idempotent and will happily adopt it.
+- name: Create shared proxy network (will be adopted by Traefik role)
+  community.docker.docker_network:
+    name: proxy
+    state: present
+
 - name: Template .env
   ansible.builtin.template:
     src: env.j2
