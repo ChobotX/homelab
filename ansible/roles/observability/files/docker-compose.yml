@@ -76,6 +76,12 @@ services:
       - ./data/prometheus:/prometheus
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+    # `host.docker.internal` resolves to the host's gateway IP on the
+    # observability bridge — used by the optional nvidia_gpu_exporter scrape
+    # job (exporter runs as systemd on the host, not a compose service).
+    # Safe no-op when GPU is disabled.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - observability
     healthcheck:

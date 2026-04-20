@@ -37,3 +37,9 @@ observability_tempo_uid: 10001
 observability_tempo_gid: 10001
 observability_alertmanager_uid: 65534
 observability_alertmanager_gid: 65534
+
+# NVIDIA GPU exporter (utkuozdemir/nvidia_gpu_exporter). Enabled per-host via
+# `nvidia_gpu_enabled` in /etc/homelab/config.yml — falsy on hosts without GPU.
+observability_nvidia_exporter_version: "1.4.1"
+observability_nvidia_exporter_sha256: "0c7dd64b424ff54c7860777faa4da703e5a7486ea258cf6d6f5620fc691feaa5"
+observability_nvidia_exporter_port: 9835

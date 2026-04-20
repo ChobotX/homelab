@@ -162,6 +162,52 @@
     enabled: true
     daemon_reload: true
 
+# NVIDIA GPU metrics — utkuozdemir/nvidia_gpu_exporter wraps `nvidia-smi` and
+# exposes Prometheus metrics on :9835. Binary install (systemd), not a compose
+# service — exporter needs direct access to /usr/bin/nvidia-smi and /dev/nvidia*
+# on the host. Driver itself is a one-shot host-specific setup (not IaC).
+- name: NVIDIA GPU exporter
+  when: nvidia_gpu_enabled | default(false) | bool
+  tags: [gpu]
+  block:
+    - name: Download nvidia_gpu_exporter tarball
+      ansible.builtin.get_url:
+        url: "https://github.com/utkuozdemir/nvidia_gpu_exporter/releases/download/v{{ observability_nvidia_exporter_version }}/nvidia_gpu_exporter_{{ observability_nvidia_exporter_version }}_linux_x86_64.tar.gz"
+        dest: "/tmp/nvidia_gpu_exporter_{{ observability_nvidia_exporter_version }}.tar.gz"
+        checksum: "sha256:{{ observability_nvidia_exporter_sha256 }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Extract nvidia_gpu_exporter binary
+      ansible.builtin.unarchive:
+        src: "/tmp/nvidia_gpu_exporter_{{ observability_nvidia_exporter_version }}.tar.gz"
+        dest: /usr/local/sbin
+        include: ["nvidia_gpu_exporter"]
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+      notify: Restart nvidia-gpu-exporter
+
+    - name: Deploy nvidia-gpu-exporter systemd unit
+      ansible.builtin.copy:
+        src: nvidia-gpu-exporter.service
+        dest: /etc/systemd/system/nvidia-gpu-exporter.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart nvidia-gpu-exporter
+
+    - name: Enable and start nvidia-gpu-exporter
+      ansible.builtin.systemd:
+        name: nvidia-gpu-exporter.service
+        state: started
+        enabled: true
+        daemon_reload: true
+
 - name: Deploy Loki config
   ansible.builtin.copy:
     src: loki-config.yml

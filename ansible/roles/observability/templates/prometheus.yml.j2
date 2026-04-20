@@ -40,6 +40,15 @@ scrape_configs:
       - targets: ['alertmanager:9093']
     metrics_path: /metrics
 
+{% if nvidia_gpu_enabled | default(false) | bool %}
+  - job_name: nvidia_gpu
+    # Exporter runs on the host (systemd, see observability role). Prometheus
+    # reaches it via docker's host-gateway alias — requires `extra_hosts` on
+    # the prometheus service (see docker-compose.yml).
+    static_configs:
+      - targets: ['host.docker.internal:{{ observability_nvidia_exporter_port }}']
+
+{% endif %}
   - job_name: homeassistant
     scrape_interval: 60s
     metrics_path: {{ observability_homeassistant_metrics_path }}
