@@ -137,10 +137,12 @@ services:
       - --config.file=/etc/alertmanager/alertmanager.yml
       - --storage.path=/alertmanager
       - --web.listen-address=0.0.0.0:9093
+      - --web.external-url=https://${ALERTMANAGER_HOST}
     volumes:
       - ./data/alertmanager:/alertmanager
       - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     networks:
+      - proxy
       - observability
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:9093/-/ready || exit 1"]
@@ -151,6 +153,17 @@ services:
       resources:
         limits:
           memory: ${ALERTMANAGER_MEM_LIMIT}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+      traefik.http.routers.alertmanager.rule: "Host(`${ALERTMANAGER_HOST}`)"
+      traefik.http.routers.alertmanager.entrypoints: "websecure"
+      traefik.http.routers.alertmanager.tls: "true"
+      traefik.http.routers.alertmanager.tls.certresolver: "cloudflare"
+      traefik.http.routers.alertmanager.service: "alertmanager"
+      # Same basic-auth gate as the Traefik dashboard; wg-only restricts to VPN.
+      traefik.http.routers.alertmanager.middlewares: "wg-only@file,security-headers@file,dashboard-auth@file"
+      traefik.http.services.alertmanager.loadbalancer.server.port: "9093"
 
   alloy:
     image: ${ALLOY_IMAGE}

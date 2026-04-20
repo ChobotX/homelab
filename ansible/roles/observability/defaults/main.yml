@@ -1,6 +1,7 @@
 ---
 observability_network: observability
 observability_host: "grafana.{{ homelab_domain }}"
+observability_alertmanager_host: "alertmanager.{{ homelab_domain }}"
 
 observability_grafana_image: "grafana/grafana:11.3.1@sha256:fa801ab6e1ae035135309580891e09f7eb94d1abdbd2106bdc288030b028158c"
 observability_prometheus_image: "prom/prometheus:v3.1.0@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218"
