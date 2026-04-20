@@ -44,7 +44,11 @@ jobs:
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
-          persist-credentials: false
+          # persist-credentials: false is dropped intentionally. It triggers
+          # the action's pre-fetch auth cleanup (`git config --local …`) in
+          # a dir with no .git on a fresh ephemeral self-hosted workspace,
+          # failing with exit 128. The JIT wrapper wipes _work after every
+          # job so nothing leaks across jobs.
           ref: ${{ github.sha }}
 
       - name: Install ansible-core (user-local, no sudo)
