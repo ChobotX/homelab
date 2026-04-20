@@ -328,8 +328,14 @@ ok "/etc/homelab/ populated"
 
 step "Phase 7 — installing ephemeral JIT self-hosted GitHub Actions runner"
 
+# Ensure the docker group exists so runner can have docker socket access from
+# first boot. Docker package is installed later by Ansible, but the group
+# pre-existing is harmless — docker's postinst uses `groupadd -f` too.
+groupadd -f docker
 if ! id -u "$GITHUB_RUNNER_USER" >/dev/null 2>&1; then
-  useradd -r -m -s /bin/bash "$GITHUB_RUNNER_USER"
+  useradd -r -m -s /bin/bash -G docker "$GITHUB_RUNNER_USER"
+else
+  usermod -aG docker "$GITHUB_RUNNER_USER"
 fi
 # NOPASSWD:ALL is required for Ansible become. The wipe-per-job flow below
 # bounds blast radius — the runner's workspace is deleted after each job.

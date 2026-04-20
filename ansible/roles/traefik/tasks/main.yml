@@ -49,9 +49,9 @@
   changed_when: false
   no_log: true
 
-- name: Export basicauth with docker-compose-safe $ escaping
+- name: Export basicauth (no $ escaping — template target is static YAML, not docker-compose env)
   ansible.builtin.set_fact:
-    traefik_dashboard_basicauth: "{{ traefik_dashboard_basicauth_raw.stdout | regex_replace('\\$', '$$') }}"
+    traefik_dashboard_basicauth: "{{ traefik_dashboard_basicauth_raw.stdout }}"
   no_log: true
 
 - name: Template traefik.yml (static config)
