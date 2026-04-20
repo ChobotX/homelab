@@ -219,11 +219,10 @@ services:
       - /var/lib/node_exporter/textfile:/var/lib/node_exporter/textfile:ro
     networks:
       - observability
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:12345/-/ready || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+    # No healthcheck — grafana/alloy images ship without wget/curl/nc, so
+    # any shell-based probe fails. Alloy is internal-only (no Traefik
+    # router) so a probe isn't needed for zero-downtime; `up --wait` still
+    # waits for the container to not-exit, which is enough here.
     deploy:
       resources:
         limits:
