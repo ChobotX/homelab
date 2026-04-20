@@ -42,13 +42,22 @@ groups:
       # Source: docker-state-exporter.sh → textfile collector. One series per
       # container Docker knows about, keyed by `name` — auto-discovered, no
       # allow-list to maintain. Stopped/removed containers drop out naturally.
+      #
+      # `for: 15m` swallows docker-rollout / force-recreate transients (a
+      # container briefly reports running=0 mid-swap). `and on(name)
+      # (docker_container_running offset 15m)` requires the same container
+      # to have existed 15m ago, suppressing alerts on phantom/stale series
+      # left over from renamed containers (e.g. alertmanager -> observability-
+      # alertmanager-2 after the docker-rollout migration).
       - alert: ContainerDown
-        expr: docker_container_running == 0
-        for: 5m
+        expr: |
+          (docker_container_running == 0)
+          and on(name) (docker_container_running offset 15m)
+        for: 15m
         labels:
           severity: critical
         annotations:
-          summary: "Container {{ $labels.name }} not running for >5m"
+          summary: "Container {{ $labels.name }} not running for >15m"
 
       - alert: ContainerUnhealthy
         expr: docker_container_health{status="unhealthy"} == 1
