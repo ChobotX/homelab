@@ -521,9 +521,15 @@ else
   if [ ! -x "$GITHUB_RUNNER_DIR/run.sh" ]; then
     tarball="actions-runner-linux-${arch}-${GITHUB_RUNNER_VERSION}.tar.gz"
     url="https://github.com/actions/runner/releases/download/v${GITHUB_RUNNER_VERSION}/${tarball}"
-    note "downloading $url"
-    curl -fsSL -o "/tmp/$tarball" "$url"
-    sudo -u "$GITHUB_RUNNER_USER" tar -xzf "/tmp/$tarball" -C "$GITHUB_RUNNER_DIR"
+    # Reuse an existing download if present (recovery from prior failures).
+    if [ ! -s "/tmp/$tarball" ]; then
+      note "downloading $url"
+      curl -fsSL -o "/tmp/$tarball" "$url"
+    fi
+    # Extract as root (bootstrap's umask 077 leaves the tarball 0600 and
+    # unreadable by gha-runner). Chown the tree afterwards.
+    tar -xzf "/tmp/$tarball" -C "$GITHUB_RUNNER_DIR"
+    chown -R "${GITHUB_RUNNER_USER}:${GITHUB_RUNNER_USER}" "$GITHUB_RUNNER_DIR"
     rm -f "/tmp/$tarball"
   fi
   [ -x "$GITHUB_RUNNER_DIR/bin/installdependencies.sh" ] && \
