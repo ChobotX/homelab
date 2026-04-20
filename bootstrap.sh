@@ -450,18 +450,18 @@ ok "ephemeral JIT runner service active"
 
 ### ---------- phase 8: dispatch first deploy ----------
 
-step "Phase 8 — dispatching first deploy.yml run"
+step "Phase 8 — dispatching first ci.yml run (runs lint + docker-test + deploy in order)"
 http=$(curl -s -o /tmp/ghdispatch.out -w '%{http_code}' \
   -X POST \
   -H "Accept: application/vnd.github+json" \
   -H "Authorization: Bearer ${GITHUB_TOKEN}" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
-  "https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/deploy.yml/dispatches" \
+  "https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/ci.yml/dispatches" \
   -d '{"ref":"main"}')
 if [ "$http" != "204" ]; then
   die "dispatch returned HTTP $http: $(cat /tmp/ghdispatch.out 2>/dev/null)"
 fi
-ok "deploy.yml dispatched — watch → https://github.com/${GITHUB_REPO}/actions"
+ok "ci.yml dispatched — watch → https://github.com/${GITHUB_REPO}/actions"
 
 ### ---------- final summary ----------
 

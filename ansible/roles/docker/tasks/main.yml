@@ -81,6 +81,13 @@
     groups: docker
     append: true
 
+- name: Add CI runner user to docker group (for smoke checks / deploy steps)
+  # bootstrap.sh always creates this user; unconditional add is safe.
+  ansible.builtin.user:
+    name: gha-runner
+    groups: docker
+    append: true
+
 - name: Ensure docker service is enabled and running
   ansible.builtin.systemd:
     name: docker
