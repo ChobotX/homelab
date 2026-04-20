@@ -182,6 +182,9 @@ case "$RESTIC_BACKEND" in
     # SFTP repo → we'll generate an ed25519 key if user doesn't already have one.
     ASK RESTIC_SFTP_HOST "SFTP host for restic (e.g. u1234.storage.example.com)" "" valid_host
     ASK RESTIC_SFTP_USER "SFTP user" "" valid_user
+    note "If you already use this SFTP server and don't want to rotate the authorized pubkey,"
+    note "give the path to the EXISTING private key file here. Blank = generate a new one."
+    ASK_OPT RESTIC_SFTP_PRIVATE_KEY_PATH "path to existing SFTP private key (readable by you)"
     ;;
   b2)
     ASK_OPT RESTIC_B2_ACCOUNT_ID  "B2 account ID"  1
@@ -367,14 +370,25 @@ fi
 ### ---------- phase 6b: restic SFTP key (if SFTP) ----------
 
 if [ "$RESTIC_BACKEND" = "sftp" ]; then
-  step "Phase 6b — generating SFTP key + fetching known_hosts"
+  step "Phase 6b — SFTP key + known_hosts for restic"
   sftp_priv=/tmp/bootstrap.sftp_key.$$
   sftp_pub=${sftp_priv}.pub
+
+  # If user pointed at an existing key file, load its contents.
+  if [ -z "${RESTIC_SFTP_PRIVATE_KEY:-}" ] && [ -n "${RESTIC_SFTP_PRIVATE_KEY_PATH:-}" ]; then
+    [ -r "$RESTIC_SFTP_PRIVATE_KEY_PATH" ] \
+      || die "cannot read $RESTIC_SFTP_PRIVATE_KEY_PATH (permission or typo)"
+    note "using existing SFTP private key from $RESTIC_SFTP_PRIVATE_KEY_PATH"
+    RESTIC_SFTP_PRIVATE_KEY="$(cat "$RESTIC_SFTP_PRIVATE_KEY_PATH")"
+  fi
+
   if [ -n "${RESTIC_SFTP_PRIVATE_KEY:-}" ]; then
-    note "using RESTIC_SFTP_PRIVATE_KEY from env"
     printf '%s' "$RESTIC_SFTP_PRIVATE_KEY" > "$sftp_priv"
+    # Most keys lack a trailing newline — add one to satisfy ssh-keygen.
+    [ "$(tail -c1 "$sftp_priv" | wc -l)" -eq 1 ] || printf '\n' >> "$sftp_priv"
     chmod 0400 "$sftp_priv"
-    ssh-keygen -y -f "$sftp_priv" > "$sftp_pub"
+    ssh-keygen -y -f "$sftp_priv" > "$sftp_pub" \
+      || die "provided SFTP private key is not a valid SSH key"
   else
     ssh-keygen -t ed25519 -N '' -f "$sftp_priv" -C "homelab->${RESTIC_SFTP_HOST}" >/dev/null
     cat <<EOF
