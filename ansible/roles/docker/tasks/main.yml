@@ -107,6 +107,13 @@
     groups: docker
     append: true
 
+- name: Stat gha-runner-jit.service unit
+  # Unit is created by bootstrap.sh, not Ansible — clean test containers
+  # won't have it, and the mode-fix task below would fail without this gate.
+  ansible.builtin.stat:
+    path: /etc/systemd/system/gha-runner-jit.service
+  register: gha_runner_unit
+
 - name: Ensure gha-runner-jit.service unit is world-readable
   # bootstrap.sh writes it under umask 077 so pre-fix hosts have 0600 and
   # systemd logs "marked world-inaccessible" every daemon-reload. 0644
@@ -116,6 +123,7 @@
     mode: "0644"
     owner: root
     group: root
+  when: gha_runner_unit.stat.exists
   notify: Reload systemd
 
 - name: Ensure docker service is enabled and running
