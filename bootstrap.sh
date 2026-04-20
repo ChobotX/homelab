@@ -440,6 +440,9 @@ NoNewPrivileges=false
 [Install]
 WantedBy=multi-user.target
 EOF
+# Heredoc inherits script umask 077 → unit file lands 0600 and systemd warns
+# "marked world-inaccessible" every daemon-reload. 0644 matches package units.
+chmod 0644 /etc/systemd/system/gha-runner-jit.service
 
 # Drop any pre-existing persistent registration service.
 if systemctl list-units --type=service --no-legend | grep -q 'actions.runner\.'; then

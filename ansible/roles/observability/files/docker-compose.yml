@@ -153,6 +153,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    user: "${ALERTMANAGER_UID}:${ALERTMANAGER_GID}"
     command:
       - --config.file=/etc/alertmanager/alertmanager.yml
       - --storage.path=/alertmanager

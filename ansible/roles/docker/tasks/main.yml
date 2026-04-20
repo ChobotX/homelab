@@ -107,6 +107,17 @@
     groups: docker
     append: true
 
+- name: Ensure gha-runner-jit.service unit is world-readable
+  # bootstrap.sh writes it under umask 077 so pre-fix hosts have 0600 and
+  # systemd logs "marked world-inaccessible" every daemon-reload. 0644
+  # matches package-shipped units and silences the warning.
+  ansible.builtin.file:
+    path: /etc/systemd/system/gha-runner-jit.service
+    mode: "0644"
+    owner: root
+    group: root
+  notify: Reload systemd
+
 - name: Ensure docker service is enabled and running
   ansible.builtin.systemd:
     name: docker

@@ -9,12 +9,15 @@
   loop:
     - /opt/observability
     - /opt/observability/data
-    - /opt/observability/data/alertmanager
     - /opt/observability/data/alloy
     - /opt/observability/grafana
     - /opt/observability/grafana/provisioning
     - /opt/observability/grafana/provisioning/datasources
     - /opt/observability/grafana/provisioning/dashboards
+    # Grafana 11.3 scans these unconditionally on boot. Without the dirs
+    # it logs "Failed to read provisioning files" errors. Empty is fine.
+    - /opt/observability/grafana/provisioning/alerting
+    - /opt/observability/grafana/provisioning/plugins
     - /opt/observability/grafana/dashboards
 
 - name: Ensure Grafana data dir (owned by Grafana UID)
@@ -48,6 +51,18 @@
     owner: "{{ observability_tempo_uid }}"
     group: "{{ observability_tempo_gid }}"
     mode: "0755"
+
+- name: Ensure Alertmanager data dir (owned by nobody UID)
+  # AM runs as uid 65534 in prom/alertmanager and writes nflog maintenance
+  # files — root-owned dir => "permission denied" every 15m. recurse heals
+  # any pre-existing files created before this task existed.
+  ansible.builtin.file:
+    path: /opt/observability/data/alertmanager
+    state: directory
+    owner: "{{ observability_alertmanager_uid }}"
+    group: "{{ observability_alertmanager_gid }}"
+    mode: "0755"
+    recurse: true
 
 - name: Create shared observability network
   community.docker.docker_network:

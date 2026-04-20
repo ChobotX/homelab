@@ -35,3 +35,5 @@ observability_loki_uid: 10001
 observability_loki_gid: 10001
 observability_tempo_uid: 10001
 observability_tempo_gid: 10001
+observability_alertmanager_uid: 65534
+observability_alertmanager_gid: 65534
