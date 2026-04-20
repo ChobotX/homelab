@@ -10,5 +10,7 @@
 - name: Swap traefik service
   ansible.builtin.command:
     chdir: /opt/traefik
-    cmd: docker compose up -d --wait --no-deps traefik
+    # --force-recreate so bind-mounted traefik.yml / dynamic/*.yml changes
+    # actually trigger a restart (compose sees no service-spec diff otherwise).
+    cmd: docker compose up -d --wait --no-deps --force-recreate traefik
   changed_when: true
