@@ -10,20 +10,6 @@
     - /opt/vaultwarden
     - /opt/vaultwarden/data
 
-- name: Generate Vaultwarden admin token (idempotent; cached in /etc/homelab/secrets/)
-  ansible.builtin.set_fact:
-    vaultwarden_admin_token: >-
-      {{ lookup('ansible.builtin.password',
-                '/etc/homelab/secrets/vaultwarden_admin_token length=64 chars=ascii_letters,digits') }}
-  no_log: true
-
-- name: Lock down vaultwarden_admin_token file perms
-  ansible.builtin.file:
-    path: /etc/homelab/secrets/vaultwarden_admin_token
-    owner: root
-    group: root
-    mode: "0400"
-
 - name: Template .env
   ansible.builtin.template:
     src: env.j2

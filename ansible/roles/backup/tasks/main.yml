@@ -28,20 +28,6 @@
     group: root
     mode: "0755"
 
-- name: Generate restic repo password (idempotent; cached in /etc/homelab/secrets/)
-  ansible.builtin.set_fact:
-    backup_restic_password: >-
-      {{ lookup('ansible.builtin.password',
-                '/etc/homelab/secrets/restic_password length=48 chars=ascii_letters,digits') }}
-  no_log: true
-
-- name: Lock down restic_password file perms
-  ansible.builtin.file:
-    path: /etc/homelab/secrets/restic_password
-    owner: root
-    group: root
-    mode: "0400"
-
 - name: Deploy restic environment file (repo URL + credentials + password)
   ansible.builtin.template:
     src: restic.env.j2
@@ -150,9 +136,7 @@
     mode: "0750"
 
 - name: Initialize restic repo (idempotent)
-  # backup_restic_password is always set via the lookup above; the `when`
-  # guard is paranoia against an empty on-disk secret file.
-  when: backup_restic_password | length > 0
+  when: restic_password | length > 0
   ansible.builtin.shell: |
     set -a
     . /etc/restic/restic.env

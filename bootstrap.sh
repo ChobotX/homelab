@@ -305,6 +305,23 @@ write_secret restic_sftp_private_key     "$(cat "$RESTIC_SFTP_PRIVATE_KEY_PATH")
 write_secret github_pat                  "$GITHUB_TOKEN"
 write_secret homeassistant_metrics_token "$HOMEASSISTANT_METRICS_TOKEN"
 write_secret alertmanager_smtp_password  "$ALERTMANAGER_SMTP_PASSWORD"
+
+# Generate internal passwords (idempotent — never overwrite an existing one).
+# These live alongside bootstrap-written secrets so Ansible just slurps them.
+# Generated here because the deploy runner (gha-runner) can't write files
+# into /etc/homelab/secrets (dir mode 0701), so Ansible lookup('password', …)
+# can't self-create them.
+gen_secret_if_missing() {
+  local name="$1" length="$2"
+  local path="/etc/homelab/secrets/$name"
+  [ -s "$path" ] && return 0
+  install -m 0400 -o root -g root -T \
+    <(tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$length") "$path"
+}
+gen_secret_if_missing vaultwarden_admin_token 64
+gen_secret_if_missing restic_password         48
+gen_secret_if_missing grafana_admin_password  32
+
 ok "/etc/homelab/ populated"
 
 ### ---------- phase 7: GitHub Actions runner (ephemeral JIT) ----------

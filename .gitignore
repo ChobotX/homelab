@@ -10,6 +10,16 @@
 # Contains tokens, hub IPs, etc. Keep on your laptop + USB, never in git.
 /bootstrap.env
 
+# Mac-side bootstrap prep — generated WG keypair, copy of SFTP key, etc.
+# Ship these files on a USB stick alongside bootstrap.env.
+/.bootstrap-secrets/
+
+# Scratch-paste files from USB / notes — never commit.
+/PAT.txt
+/dns_token.txt
+/wg_pub_key.txt
+/id_ed25519_homelab.pub
+
 # SSH
 id_*
 !*.pub

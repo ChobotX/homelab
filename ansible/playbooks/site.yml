@@ -24,15 +24,18 @@
   # whether Ansible runs on-box (self-hosted runner) or from a laptop over SSH.
 
   vars:
-    # Secrets that bootstrap writes and downstream roles slurp. Role-generated
-    # secrets (vaultwarden_admin_token, restic_password, grafana_admin_password)
-    # are not listed here — the roles read them directly via lookup('password').
+    # Secrets that bootstrap writes and downstream roles slurp.
+    # Bootstrap generates the internal passwords (vaultwarden/restic/grafana)
+    # as root at first run — see bootstrap.sh gen_secret_if_missing.
     homelab_secret_names:
       - cloudflare_dns01_token
       - traefik_dashboard_password
       - restic_sftp_private_key
       - homeassistant_metrics_token
       - alertmanager_smtp_password
+      - vaultwarden_admin_token
+      - restic_password
+      - grafana_admin_password
 
   # pre_tasks are tagged `always` so they fire even with --tags <role>.
   pre_tasks:
