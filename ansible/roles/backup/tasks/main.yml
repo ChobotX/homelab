@@ -62,7 +62,9 @@
 - name: Manage SFTP private key
   ansible.builtin.copy:
     dest: /root/.ssh/homelab_sb_id_ed25519
-    content: "{{ restic_sftp_private_key }}"
+    # OpenSSH rejects keys without a trailing newline ("error in libcrypto");
+    # site.yml's .strip() on slurped secrets drops it, so re-add it here.
+    content: "{{ restic_sftp_private_key }}\n"
     owner: root
     group: root
     mode: "0600"
