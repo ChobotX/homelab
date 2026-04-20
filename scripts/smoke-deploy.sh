@@ -24,7 +24,11 @@ ok "ufw active"
 for svc in traefik vaultwarden grafana prometheus loki tempo alertmanager alloy; do
   cid=$(sudo docker ps --filter "label=com.docker.compose.service=${svc}" --format '{{.ID}}' | head -n1)
   [ -n "$cid" ] || fail "service $svc not running"
-  health=$(sudo docker inspect -f '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "none")
+  # Without the {{if}} guard, Go template errors on containers with no
+  # healthcheck (e.g. alloy) — it prints a stray newline to stdout and
+  # exits 1, so `|| echo "none"` would capture "\nnone" and fail the
+  # case match below.
+  health=$(sudo docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null || echo "none")
   case "$health" in
     healthy) ok "$svc healthy" ;;
     none)    ok "$svc running (no healthcheck defined)" ;;
