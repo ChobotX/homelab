@@ -16,7 +16,17 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "title": "Services",
+      "type": "dashboards",
+      "tags": ["services"],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ],
   "liveNow": false,
   "panels": [
     {
@@ -167,50 +177,141 @@
     },
     {
       "type": "row",
-      "title": "Containers",
+      "title": "Health",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
       "id": 101,
       "collapsed": false,
       "panels": []
     },
     {
-      "type": "timeseries",
-      "title": "Container CPU",
+      "type": "stat",
+      "title": "Containers running",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
-      "id": 5,
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 7 },
+      "id": 10,
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
-          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": { "mode": "normal" } }
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
         }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name!=\"\"}[5m]))",
-          "legendFormat": "{{name}}",
+          "expr": "count(docker_container_running == 1)",
           "refId": "A"
         }
       ]
     },
     {
-      "type": "timeseries",
-      "title": "Container Memory",
+      "type": "stat",
+      "title": "Containers unhealthy",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
-      "id": 6,
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 7 },
+      "id": 11,
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
-          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": { "mode": "normal" } }
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "noValue": "0"
         }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (name) (container_memory_working_set_bytes{name!=\"\"})",
-          "legendFormat": "{{name}}",
+          "expr": "count(docker_container_health{status=\"unhealthy\"} == 1) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Alerts firing",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 7 },
+      "id": 12,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          },
+          "noValue": "0"
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(ALERTS{alertstate=\"firing\"}) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Backup age",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 7 },
+      "id": 13,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 24 },
+              { "color": "red", "value": 48 }
+            ]
+          },
+          "noValue": "never"
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(time() - restic_last_backup_timestamp_seconds) / 3600",
           "refId": "A"
         }
       ]
@@ -218,19 +319,22 @@
     {
       "type": "row",
       "title": "Ingress (Traefik)",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 12 },
       "id": 102,
       "collapsed": false,
       "panels": []
     },
     {
       "type": "timeseries",
-      "title": "Requests/sec",
+      "title": "Requests/sec by code",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
-      "id": 7,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "id": 20,
       "fieldConfig": {
-        "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 } }
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 }
+        }
       },
       "targets": [
         {
@@ -243,18 +347,84 @@
     },
     {
       "type": "timeseries",
-      "title": "p95 latency",
+      "title": "p95 latency (overall)",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
-      "id": 8,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "id": 21,
       "fieldConfig": {
-        "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 } }
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 }
+        }
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(traefik_service_request_duration_seconds_bucket[5m])))",
-          "legendFormat": "{{service}}",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(traefik_service_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "5xx rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "id": 22,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.01 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(traefik_entrypoint_requests_total{entrypoint=\"websecure\",code=~\"5..\"}[5m]))",
+          "legendFormat": "5xx",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "TLS cert — min days left",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+      "id": 23,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "d",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 7 },
+              { "color": "green", "value": 14 }
+            ]
+          },
+          "noValue": "no cert"
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "min(traefik_tls_certs_not_after - time()) / 86400",
           "refId": "A"
         }
       ]
@@ -262,17 +432,17 @@
     {
       "type": "row",
       "title": "Logs",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
       "id": 103,
       "collapsed": false,
       "panels": []
     },
     {
       "type": "logs",
-      "title": "All containers",
+      "title": "Errors across all containers",
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 25 },
-      "id": 9,
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 30 },
+      "id": 30,
       "options": {
         "showTime": true,
         "showLabels": false,
@@ -286,7 +456,31 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=\"docker\"}",
+          "expr": "{job=\"docker\"} |~ \"(?i)(error|warn|fatal|panic|exception)\"",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Traefik 5xx access",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 30 },
+      "id": 31,
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": false,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{job=\"traefik\"} | json | DownstreamStatus=~\"5..\"",
           "refId": "A"
         }
       ]
@@ -294,13 +488,13 @@
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["homelab"],
+  "tags": ["homelab", "overview"],
   "templating": { "list": [] },
   "time": { "from": "now-6h", "to": "now" },
   "timepicker": {},
   "timezone": "",
   "title": "Homelab Overview",
   "uid": "homelab-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
