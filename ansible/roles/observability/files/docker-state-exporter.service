@@ -1,0 +1,15 @@
+[Unit]
+Description=Docker container state → node_exporter textfile (managed by Ansible)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/docker-state-exporter.sh
+Nice=19
+IOSchedulingClass=best-effort
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/node_exporter/textfile
+PrivateTmp=true
+NoNewPrivileges=true

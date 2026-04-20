@@ -101,6 +101,52 @@
     mode: "0644"
   notify: Swap prometheus service
 
+# Per-container state metrics (running/health/restart count) as a systemd-timed
+# textfile producer. Alloy's node_exporter textfile collector already watches
+# /var/lib/node_exporter/textfile (see alloy-config.alloy.j2), so no scrape
+# job or new service is needed — metrics auto-flow with `job="node"`.
+
+- name: Ensure node_exporter textfile collector directory
+  ansible.builtin.file:
+    path: /var/lib/node_exporter/textfile
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy docker-state exporter script
+  ansible.builtin.copy:
+    src: docker-state-exporter.sh
+    dest: /usr/local/sbin/docker-state-exporter.sh
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Deploy docker-state exporter systemd service unit
+  ansible.builtin.copy:
+    src: docker-state-exporter.service
+    dest: /etc/systemd/system/docker-state-exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Deploy docker-state exporter systemd timer unit
+  ansible.builtin.copy:
+    src: docker-state-exporter.timer
+    dest: /etc/systemd/system/docker-state-exporter.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start docker-state exporter timer
+  ansible.builtin.systemd:
+    name: docker-state-exporter.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+
 - name: Deploy Loki config
   ansible.builtin.copy:
     src: loki-config.yml

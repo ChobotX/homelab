@@ -1,0 +1,13 @@
+[Unit]
+Description=Docker state exporter timer (managed by Ansible)
+
+[Timer]
+# Prometheus scrapes every 30s; emit fresh textfile every 15s so a scrape
+# never sees a sample older than one cycle.
+OnBootSec=10s
+OnUnitActiveSec=15s
+AccuracySec=1s
+Unit=docker-state-exporter.service
+
+[Install]
+WantedBy=timers.target

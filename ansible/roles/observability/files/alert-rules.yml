@@ -34,19 +34,37 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "CPU >90% sustained on {{ $labels.instance }}"
+          summary: "CPU {{ $value | printf \"%.0f\" }}% sustained on {{ $labels.instance }}"
 
   - name: containers
     interval: 30s
     rules:
+      # Source: docker-state-exporter.sh → textfile collector. One series per
+      # container Docker knows about, keyed by `name` — auto-discovered, no
+      # allow-list to maintain. Stopped/removed containers drop out naturally.
       - alert: ContainerDown
-        expr: |
-          absent(container_last_seen{name=~"traefik|vaultwarden|grafana|prometheus|loki|tempo|alertmanager|alloy"})
+        expr: docker_container_running == 0
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "Container not seen for 5m"
+          summary: "Container {{ $labels.name }} not running for >5m"
+
+      - alert: ContainerUnhealthy
+        expr: docker_container_health{status="unhealthy"} == 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} reporting unhealthy"
+
+      - alert: ContainerRestartStorm
+        expr: increase(docker_container_restarts[15m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarted {{ $value }}× in 15m"
 
       - alert: ContainerHighMemory
         expr: |
@@ -67,7 +85,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "No restic backup in >48h"
+          summary: "restic backup stale — last run {{ $value | humanizeDuration }} ago on {{ $labels.instance }}"
 
   - name: certs
     interval: 1m
