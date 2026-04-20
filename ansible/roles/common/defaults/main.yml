@@ -15,6 +15,9 @@ common_packages:
   - dnsutils
   - net-tools
   - iproute2
+  # Required for `Ensure locale is generated` task (provides locale-gen +
+  # /etc/locale.gen). Ubuntu minimal ships without it.
+  - locales
   # ansible-core itself — keeps drift-proof so deploy never has to install it.
   - ansible-core
 
