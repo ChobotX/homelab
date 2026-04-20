@@ -408,12 +408,11 @@ Restart=always
 RestartSec=5
 KillMode=process
 TimeoutStopSec=30
-# ProtectHome disabled: the runner writes to its own $HOME (.gitconfig,
-# pip --user, actions cache). ProtectSystem=full still blocks /usr,/boot,/etc
-# writes; explicit ReadWritePaths adds the runner workdir.
-ProtectSystem=full
+# No systemd sandboxing: this runner's whole job is applying Ansible, which
+# needs to write /etc, /usr, /home, etc. ProtectSystem / ProtectHome block
+# dpkg post-install scripts (logrotate, rsync, vim-common, …) that write
+# under /etc, causing opaque "Sub-process dpkg returned 1" failures.
 NoNewPrivileges=false
-ReadWritePaths=${GITHUB_RUNNER_DIR}
 
 [Install]
 WantedBy=multi-user.target
