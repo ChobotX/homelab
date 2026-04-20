@@ -1,5 +1,14 @@
 ---
-- name: Restart traefik stack
-  community.docker.docker_compose_v2:
-    project_src: /opt/traefik
-    state: restarted
+# Traefik is a single-service stack, but the per-service handler shape keeps
+# the role symmetric with observability/vaultwarden and sets up for the day
+# more services land in /opt/traefik.
+#
+# Traefik self-swap gap: 10–30s grace + ~1s new-container startup. Kernel
+# TCP backlog absorbs the gap for new connects; in-flight HTTPS sessions
+# complete within the grace period. Image bumps are rare.
+
+- name: Swap traefik service
+  ansible.builtin.command:
+    chdir: /opt/traefik
+    cmd: docker compose up -d --wait --no-deps traefik
+  changed_when: true

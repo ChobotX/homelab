@@ -18,7 +18,7 @@
     group: root
     mode: "0600"
   no_log: true
-  notify: Restart vaultwarden stack
+  notify: Swap vaultwarden service
 
 - name: Deploy docker-compose.yml
   ansible.builtin.copy:
@@ -27,10 +27,14 @@
     owner: root
     group: root
     mode: "0644"
-  notify: Restart vaultwarden stack
+  notify: Swap vaultwarden service
 
 - name: Bring up Vaultwarden stack
+  # First-deploy safety net. `recreate: never` leaves running containers
+  # untouched on compose/image changes so the per-service handler owns
+  # every swap (with its --wait gate).
   community.docker.docker_compose_v2:
     project_src: /opt/vaultwarden
     state: present
     pull: policy
+    recreate: never

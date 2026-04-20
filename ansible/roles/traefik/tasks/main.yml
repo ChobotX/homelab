@@ -55,22 +55,25 @@
   no_log: true
 
 - name: Template traefik.yml (static config)
+  # Static config — entrypoints, providers, certresolvers — requires a
+  # restart to take effect.
   ansible.builtin.template:
     src: traefik.yml.j2
     dest: /opt/traefik/traefik.yml
     owner: root
     group: root
     mode: "0644"
-  notify: Restart traefik stack
+  notify: Swap traefik service
 
 - name: Template dynamic middlewares config
+  # Dynamic config — Traefik's file provider watches /etc/traefik/dynamic
+  # and hot-reloads middleware/router changes without a restart. No notify.
   ansible.builtin.template:
     src: dynamic-middlewares.yml.j2
     dest: /opt/traefik/dynamic/middlewares.yml
     owner: root
     group: root
     mode: "0644"
-  notify: Restart traefik stack
 
 - name: Template .env
   ansible.builtin.template:
@@ -80,7 +83,7 @@
     group: root
     mode: "0600"
   no_log: true
-  notify: Restart traefik stack
+  notify: Swap traefik service
 
 - name: Deploy docker-compose.yml
   ansible.builtin.copy:
@@ -89,10 +92,14 @@
     owner: root
     group: root
     mode: "0644"
-  notify: Restart traefik stack
+  notify: Swap traefik service
 
 - name: Bring up Traefik stack
+  # First-deploy safety net. `recreate: never` leaves running containers
+  # untouched on compose/image changes so the per-service handler owns
+  # every swap (with its --wait gate).
   community.docker.docker_compose_v2:
     project_src: /opt/traefik
     state: present
     pull: policy
+    recreate: never

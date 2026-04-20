@@ -64,6 +64,9 @@
     state: present
 
 - name: Template .env
+  # Shared across all services — any variable in here may have changed, so
+  # every service handler is notified. Handlers dedup per play so this is
+  # still one swap per service, not N.
   ansible.builtin.template:
     src: env.j2
     dest: /opt/observability/.env
@@ -71,7 +74,13 @@
     group: root
     mode: "0600"
   no_log: true
-  notify: Restart observability stack
+  notify:
+    - Swap grafana service
+    - Swap prometheus service
+    - Swap loki service
+    - Swap tempo service
+    - Swap alloy service
+    - Rollout alertmanager
 
 - name: Template Prometheus config
   ansible.builtin.template:
@@ -81,7 +90,7 @@
     group: root
     mode: "0644"
   no_log: true
-  notify: Restart observability stack
+  notify: Swap prometheus service
 
 - name: Deploy Prometheus alert rules
   ansible.builtin.copy:
@@ -90,7 +99,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify: Restart observability stack
+  notify: Swap prometheus service
 
 - name: Deploy Loki config
   ansible.builtin.copy:
@@ -99,7 +108,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify: Restart observability stack
+  notify: Swap loki service
 
 - name: Deploy Tempo config
   ansible.builtin.copy:
@@ -108,7 +117,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify: Restart observability stack
+  notify: Swap tempo service
 
 - name: Template Alertmanager config
   ansible.builtin.template:
@@ -118,7 +127,7 @@
     group: root
     mode: "0644"
   no_log: true
-  notify: Restart observability stack
+  notify: Rollout alertmanager
 
 - name: Template Alloy config
   ansible.builtin.template:
@@ -127,7 +136,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify: Restart observability stack
+  notify: Swap alloy service
 
 - name: Template Grafana datasources provisioning
   ansible.builtin.template:
@@ -136,18 +145,22 @@
     owner: root
     group: "{{ observability_grafana_gid }}"
     mode: "0640"
-  notify: Restart observability stack
+  notify: Swap grafana service
 
 - name: Template Grafana dashboards provisioning
+  # Provider config itself — path, folder, intervals — requires a grafana
+  # restart to take effect (file-provider scan is read once on boot).
   ansible.builtin.template:
     src: grafana-dashboards.yml.j2
     dest: /opt/observability/grafana/provisioning/dashboards/dashboards.yml
     owner: root
     group: "{{ observability_grafana_gid }}"
     mode: "0640"
-  notify: Restart observability stack
+  notify: Swap grafana service
 
 - name: Sync dashboard JSONs
+  # No notify — Grafana's file provider auto-reloads JSON changes every
+  # updateIntervalSeconds (30s). A container swap would be pure overhead.
   ansible.builtin.copy:
     src: "{{ item }}"
     dest: /opt/observability/grafana/dashboards/
@@ -156,19 +169,32 @@
     mode: "0640"
   with_fileglob:
     - "dashboards/*.json"
-  notify: Restart observability stack
 
 - name: Deploy docker-compose.yml
+  # Compose-file change can affect any service (network, volume, labels,
+  # image bumps landed via defaults) — notify every handler.
   ansible.builtin.copy:
     src: docker-compose.yml
     dest: /opt/observability/docker-compose.yml
     owner: root
     group: root
     mode: "0644"
-  notify: Restart observability stack
+  notify:
+    - Swap grafana service
+    - Swap prometheus service
+    - Swap loki service
+    - Swap tempo service
+    - Swap alloy service
+    - Rollout alertmanager
 
 - name: Bring up observability stack
+  # First-deploy safety net — creates any service not yet running. Image
+  # pulls happen here, but `recreate: never` stops this task from tearing
+  # down running containers when the compose file changes. That recreate
+  # path belongs to the per-service handlers above, so the --wait gate is
+  # what actually performs every swap.
   community.docker.docker_compose_v2:
     project_src: /opt/observability
     state: present
     pull: policy
+    recreate: never

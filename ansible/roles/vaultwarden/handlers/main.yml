@@ -1,5 +1,10 @@
 ---
-- name: Restart vaultwarden stack
-  community.docker.docker_compose_v2:
-    project_src: /opt/vaultwarden
-    state: restarted
+# `up --wait` + the service's own healthcheck (container-level) + Traefik's
+# active loadbalancer healthcheck give a sub-second user-visible gap on a
+# vaultwarden swap. SQLite WAL is checkpointed inside stop_grace_period.
+
+- name: Swap vaultwarden service
+  ansible.builtin.command:
+    chdir: /opt/vaultwarden
+    cmd: docker compose up -d --wait --no-deps vaultwarden
+  changed_when: true

@@ -66,6 +66,25 @@
       - docker-compose-plugin
     state: present
 
+- name: Ensure Docker CLI-plugins dir exists
+  ansible.builtin.file:
+    path: /usr/local/lib/docker/cli-plugins
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install docker-rollout CLI plugin (blue/green swap helper)
+  # Used by handlers that need zero-downtime swaps (e.g. alertmanager).
+  # SHA pinned — matches the repo's pin-everything supply-chain stance.
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/Wowu/docker-rollout/{{ docker_rollout_version }}/docker-rollout"
+    dest: /usr/local/lib/docker/cli-plugins/docker-rollout
+    checksum: "sha256:{{ docker_rollout_sha256 }}"
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Deploy Docker daemon.json
   ansible.builtin.copy:
     src: daemon.json

@@ -8,6 +8,8 @@ services:
     image: ${GRAFANA_IMAGE}
     container_name: grafana
     restart: unless-stopped
+    # SQLite WAL checkpoint on shutdown.
+    stop_grace_period: 30s
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -44,11 +46,17 @@ services:
       traefik.http.routers.grafana.service: "grafana"
       traefik.http.routers.grafana.middlewares: "wg-only@file,security-headers@file"
       traefik.http.services.grafana.loadbalancer.server.port: "3000"
+      # Active healthcheck — keeps the swap invisible to the user.
+      traefik.http.services.grafana.loadbalancer.healthcheck.path: "/api/health"
+      traefik.http.services.grafana.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.grafana.loadbalancer.healthcheck.timeout: "2s"
 
   prometheus:
     image: ${PROMETHEUS_IMAGE}
     container_name: prometheus
     restart: unless-stopped
+    # TSDB head compaction on SIGTERM needs time.
+    stop_grace_period: 30s
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -96,6 +104,11 @@ services:
       - ./loki-config.yml:/etc/loki/config.yml:ro
     networks:
       - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:
@@ -117,6 +130,11 @@ services:
       - ./tempo-config.yml:/etc/tempo.yml:ro
     networks:
       - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3200/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:
@@ -124,7 +142,9 @@ services:
 
   alertmanager:
     image: ${ALERTMANAGER_IMAGE}
-    container_name: alertmanager
+    # No container_name — docker-rollout temporarily runs two replicas
+    # during a swap (scale=2 → drain old → scale=1) and container_name
+    # would collide on the second instance.
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -164,6 +184,12 @@ services:
       # Same basic-auth gate as the Traefik dashboard; wg-only restricts to VPN.
       traefik.http.routers.alertmanager.middlewares: "wg-only@file,security-headers@file,dashboard-auth@file"
       traefik.http.services.alertmanager.loadbalancer.server.port: "9093"
+      # Active healthcheck — required for docker-rollout blue/green to
+      # work correctly (Traefik must refuse to route to the old container
+      # once it starts failing /-/ready during drain).
+      traefik.http.services.alertmanager.loadbalancer.healthcheck.path: "/-/ready"
+      traefik.http.services.alertmanager.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.alertmanager.loadbalancer.healthcheck.timeout: "2s"
 
   alloy:
     image: ${ALLOY_IMAGE}
@@ -193,6 +219,11 @@ services:
       - /var/lib/node_exporter/textfile:/var/lib/node_exporter/textfile:ro
     networks:
       - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:12345/-/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:

@@ -1,5 +1,48 @@
 ---
-- name: Restart observability stack
-  community.docker.docker_compose_v2:
-    project_src: /opt/observability
-    state: restarted
+# One handler per service — only the services whose inputs actually changed
+# get swapped. `docker compose up -d --wait --no-deps <svc>` recreates just
+# that service and blocks until its container healthcheck is green, so
+# Traefik's active loadbalancer healthcheck has a clean pivot point.
+#
+# Grafana dashboard JSONs auto-reload via the file provider (see
+# grafana-dashboards.yml.j2 `updateIntervalSeconds: 30`) so they don't
+# notify any handler.
+
+- name: Swap grafana service
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker compose up -d --wait --no-deps grafana
+  changed_when: true
+
+- name: Swap prometheus service
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker compose up -d --wait --no-deps prometheus
+  changed_when: true
+
+- name: Swap loki service
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker compose up -d --wait --no-deps loki
+  changed_when: true
+
+- name: Swap tempo service
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker compose up -d --wait --no-deps tempo
+  changed_when: true
+
+- name: Swap alloy service
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker compose up -d --wait --no-deps alloy
+  changed_when: true
+
+# Tier B — alertmanager supports clustering and tolerates brief double-read,
+# so blue/green via `docker rollout` gives true zero-downtime: scale to 2,
+# wait new healthy, drain old, scale back to 1.
+- name: Rollout alertmanager
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker rollout alertmanager
+  changed_when: true

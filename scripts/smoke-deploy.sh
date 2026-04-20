@@ -18,14 +18,17 @@ ok "fail2ban active"
 sudo ufw status | grep -q "Status: active"      || fail "ufw not active"
 ok "ufw active"
 
-# Containers — check they exist AND are healthy.
-for name in traefik vaultwarden grafana prometheus loki tempo alertmanager alloy; do
-  sudo docker ps --format '{{.Names}}' | grep -q "^${name}$" || fail "container $name not running"
-  health=$(sudo docker inspect -f '{{.State.Health.Status}}' "$name" 2>/dev/null || echo "none")
+# Containers — check they exist AND are healthy. Resolve by compose-service
+# label rather than container name: alertmanager runs under docker-rollout,
+# which drops container_name to allow scale=2 during blue/green swaps.
+for svc in traefik vaultwarden grafana prometheus loki tempo alertmanager alloy; do
+  cid=$(sudo docker ps --filter "label=com.docker.compose.service=${svc}" --format '{{.ID}}' | head -n1)
+  [ -n "$cid" ] || fail "service $svc not running"
+  health=$(sudo docker inspect -f '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "none")
   case "$health" in
-    healthy) ok "$name healthy" ;;
-    none)    ok "$name running (no healthcheck defined)" ;;
-    *)       fail "$name container status: $health" ;;
+    healthy) ok "$svc healthy" ;;
+    none)    ok "$svc running (no healthcheck defined)" ;;
+    *)       fail "$svc container status: $health" ;;
   esac
 done
 
@@ -71,8 +74,35 @@ targets_up=$(sudo docker exec prometheus wget -qO- 'http://localhost:9090/api/v1
 [ "${targets_up:-0}" -ge 1 ] || fail "no prometheus targets up"
 ok "prometheus targets up (${targets_up})"
 
-sudo docker exec alertmanager wget -qO- http://localhost:9093/-/ready 2>/dev/null \
+# Alertmanager ready — reach it via its compose service name (no container_name
+# after the docker-rollout migration).
+am_cid=$(sudo docker ps --filter "label=com.docker.compose.service=alertmanager" --format '{{.ID}}' | head -n1)
+sudo docker exec "$am_cid" wget -qO- http://localhost:9093/-/ready 2>/dev/null \
   || fail "alertmanager not ready"
 ok "alertmanager ready"
+
+# End-to-end HTTPS reachability via Traefik — catches drift between
+# loadbalancer healthcheck wiring, backend ports, and cert resolution.
+# --resolve pins to loopback so we don't depend on Cloudflare DNS here.
+for endpoint in \
+  "grafana.${domain}|/api/health" \
+  "vault.${domain}|/alive"
+do
+  host="${endpoint%%|*}"
+  path="${endpoint##*|}"
+  curl -fsS -m 5 --resolve "${host}:443:127.0.0.1" "https://${host}${path}" >/dev/null \
+    || fail "HTTPS ${host}${path} not reachable via Traefik"
+  ok "HTTPS ${host}${path} reachable"
+done
+
+# Alertmanager is behind basic-auth middleware — a 401 proves Traefik
+# routed + applied the middleware correctly; a 200 proves the whole chain
+# (router + backend). Either is a pass; anything else (502, timeout) fails.
+code=$(curl -sS -m 5 --resolve "alertmanager.${domain}:443:127.0.0.1" \
+  -o /dev/null -w "%{http_code}" "https://alertmanager.${domain}/-/ready" || echo 0)
+case "$code" in
+  200|401) ok "HTTPS alertmanager.${domain} reachable (${code})" ;;
+  *)       fail "HTTPS alertmanager.${domain} returned ${code}" ;;
+esac
 
 ok "all smoke checks passed"
