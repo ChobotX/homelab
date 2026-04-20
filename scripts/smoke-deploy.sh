@@ -20,8 +20,8 @@ ok "ufw active"
 
 # Containers — check they exist AND are healthy.
 for name in traefik vaultwarden grafana prometheus loki tempo alertmanager alloy; do
-  docker ps --format '{{.Names}}' | grep -q "^${name}$" || fail "container $name not running"
-  health=$(docker inspect -f '{{.State.Health.Status}}' "$name" 2>/dev/null || echo "none")
+  sudo dockerps --format '{{.Names}}' | grep -q "^${name}$" || fail "container $name not running"
+  health=$(sudo dockerinspect -f '{{.State.Health.Status}}' "$name" 2>/dev/null || echo "none")
   case "$health" in
     healthy) ok "$name healthy" ;;
     none)    ok "$name running (no healthcheck defined)" ;;
@@ -62,16 +62,16 @@ if command -v openssl >/dev/null; then
   ok "grafana.${domain} serves LE cert"
 fi
 
-docker exec prometheus wget -qO- http://localhost:9090/-/ready 2>/dev/null | grep -qi "ready" \
+sudo dockerexec prometheus wget -qO- http://localhost:9090/-/ready 2>/dev/null | grep -qi "ready" \
   || fail "prometheus not ready"
 ok "prometheus ready"
 
-targets_up=$(docker exec prometheus wget -qO- 'http://localhost:9090/api/v1/targets?state=active' 2>/dev/null \
+targets_up=$(sudo dockerexec prometheus wget -qO- 'http://localhost:9090/api/v1/targets?state=active' 2>/dev/null \
   | grep -c '"health":"up"' || true)
 [ "${targets_up:-0}" -ge 1 ] || fail "no prometheus targets up"
 ok "prometheus targets up (${targets_up})"
 
-docker exec alertmanager wget -qO- http://localhost:9093/-/ready 2>/dev/null \
+sudo dockerexec alertmanager wget -qO- http://localhost:9093/-/ready 2>/dev/null \
   || fail "alertmanager not ready"
 ok "alertmanager ready"
 
