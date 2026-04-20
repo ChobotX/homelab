@@ -55,8 +55,10 @@ if command -v openssl >/dev/null; then
 fi
 
 # Permissions that must stay tight.
-sudo test "$(stat -c %a /opt/traefik/letsencrypt/acme.json)" = "600" \
-  || fail "/opt/traefik/letsencrypt/acme.json perms != 600"
+# `sudo test ... $(stat ...)` puts stat outside the sudo scope so it fails
+# with EACCES on a 0600 root-owned file — wrap stat in sudo instead.
+mode=$(sudo stat -c %a /opt/traefik/letsencrypt/acme.json)
+[ "$mode" = "600" ] || fail "/opt/traefik/letsencrypt/acme.json perms != 600 (got $mode)"
 ok "acme.json mode 600"
 
 systemctl is-enabled --quiet restic-backup.timer \
