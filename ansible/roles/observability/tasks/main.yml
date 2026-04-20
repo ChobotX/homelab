@@ -171,9 +171,12 @@
   tags: [gpu]
   block:
     - name: Download nvidia_gpu_exporter tarball
+      vars:
+        _v: "{{ observability_nvidia_exporter_version }}"
+        _base: "https://github.com/utkuozdemir/nvidia_gpu_exporter/releases/download"
       ansible.builtin.get_url:
-        url: "https://github.com/utkuozdemir/nvidia_gpu_exporter/releases/download/v{{ observability_nvidia_exporter_version }}/nvidia_gpu_exporter_{{ observability_nvidia_exporter_version }}_linux_x86_64.tar.gz"
-        dest: "/tmp/nvidia_gpu_exporter_{{ observability_nvidia_exporter_version }}.tar.gz"
+        url: "{{ _base }}/v{{ _v }}/nvidia_gpu_exporter_{{ _v }}_linux_x86_64.tar.gz"
+        dest: "/tmp/nvidia_gpu_exporter_{{ _v }}.tar.gz"
         checksum: "sha256:{{ observability_nvidia_exporter_sha256 }}"
         owner: root
         group: root
