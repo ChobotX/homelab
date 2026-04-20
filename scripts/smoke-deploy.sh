@@ -9,6 +9,11 @@ ok()   { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
 domain=$(awk -F'"' '/^homelab_domain:/ {print $2; exit}' /etc/homelab/config.yml)
 [ -n "$domain" ] || domain=$(awk '/^homelab_domain:/ {print $2; exit}' /etc/homelab/config.yml)
 
+# Traefik only port-publishes on the WG IP (not 0.0.0.0), so loopback gets
+# ECONNREFUSED. Read it straight from the wg0 interface the host already has.
+wg_ip=$(ip -4 addr show wg0 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1)
+[ -n "$wg_ip" ] || fail "could not determine wg0 IP"
+
 systemctl is-active --quiet ssh                 || fail "ssh inactive"
 ok "ssh active"
 
@@ -38,7 +43,7 @@ done
 
 # Traefik must NOT be serving the default (self-signed) cert — that means ACME failed.
 if command -v openssl >/dev/null; then
-  issuer=$(openssl s_client -connect "127.0.0.1:443" \
+  issuer=$(openssl s_client -connect "${wg_ip}:443" \
     -servername "vault.${domain}" </dev/null 2>/dev/null \
     | openssl x509 -noout -issuer 2>/dev/null || true)
   if [ -z "$issuer" ]; then
@@ -60,7 +65,7 @@ ok "restic-backup.timer enabled"
 
 # Observability stack sanity.
 if command -v openssl >/dev/null; then
-  issuer=$(openssl s_client -connect "127.0.0.1:443" \
+  issuer=$(openssl s_client -connect "${wg_ip}:443" \
     -servername "grafana.${domain}" </dev/null 2>/dev/null \
     | openssl x509 -noout -issuer 2>/dev/null || true)
   [ -n "$issuer" ] || fail "TLS handshake to grafana.${domain} failed"
@@ -87,14 +92,14 @@ ok "alertmanager ready"
 
 # End-to-end HTTPS reachability via Traefik — catches drift between
 # loadbalancer healthcheck wiring, backend ports, and cert resolution.
-# --resolve pins to loopback so we don't depend on Cloudflare DNS here.
+# --resolve pins to the WG IP (traefik's actual bind) so we don't depend on Cloudflare DNS here.
 for endpoint in \
   "grafana.${domain}|/api/health" \
   "vault.${domain}|/alive"
 do
   host="${endpoint%%|*}"
   path="${endpoint##*|}"
-  curl -fsS -m 5 --resolve "${host}:443:127.0.0.1" "https://${host}${path}" >/dev/null \
+  curl -fsS -m 5 --resolve "${host}:443:${wg_ip}" "https://${host}${path}" >/dev/null \
     || fail "HTTPS ${host}${path} not reachable via Traefik"
   ok "HTTPS ${host}${path} reachable"
 done
@@ -102,7 +107,7 @@ done
 # Alertmanager is behind basic-auth middleware — a 401 proves Traefik
 # routed + applied the middleware correctly; a 200 proves the whole chain
 # (router + backend). Either is a pass; anything else (502, timeout) fails.
-code=$(curl -sS -m 5 --resolve "alertmanager.${domain}:443:127.0.0.1" \
+code=$(curl -sS -m 5 --resolve "alertmanager.${domain}:443:${wg_ip}" \
   -o /dev/null -w "%{http_code}" "https://alertmanager.${domain}/-/ready" || echo 0)
 case "$code" in
   200|401) ok "HTTPS alertmanager.${domain} reachable (${code})" ;;
