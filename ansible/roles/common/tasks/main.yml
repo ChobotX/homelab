@@ -35,14 +35,14 @@
     group: root
     content: |
       [Journal]
-      SystemMaxUse={{ journald_system_max_use }}
-      MaxRetentionSec={{ journald_max_retention_sec }}
+      SystemMaxUse={{ common_journald_system_max_use }}
+      MaxRetentionSec={{ common_journald_max_retention_sec }}
   notify: Restart journald
 
 - name: Install unattended-upgrades
   ansible.builtin.apt:
     name: "{{ ['unattended-upgrades']
-              + (['apt-listchanges'] if unattended_upgrades_mail | length > 0 else []) }}"
+              + (['apt-listchanges'] if common_unattended_upgrades_mail | length > 0 else []) }}"
     state: present
 
 - name: Configure unattended-upgrades
@@ -97,9 +97,10 @@
     - { name: kernel.dmesg_restrict, value: "1" }
     # Disable the magic-SysRq key except for sync.
     - { name: kernel.sysrq, value: "4" }
-  # Only in containers do we tolerate read-only sysctls. Real hosts MUST succeed
-  # or we hide hardening regressions.
-  ignore_errors: "{{ ansible_virtualization_type in ['docker', 'lxc', 'container'] }}"
+  # Skip in containers — they share the host kernel's sysctls and most are
+  # read-only from inside a container. Real hosts MUST apply all of these, so
+  # we skip cleanly instead of swallowing errors and hiding regressions.
+  when: ansible_virtualization_type not in ['docker', 'lxc', 'container']
 
 - name: Ensure systemd-timesyncd package is present
   ansible.builtin.apt:

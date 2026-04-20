@@ -17,23 +17,23 @@ common_packages:
   - iproute2
 
 # journald retention caps
-journald_system_max_use: 500M
-journald_max_retention_sec: 30day
+common_journald_system_max_use: 500M
+common_journald_max_retention_sec: 30day
 
 # Unattended-upgrades
 # `mode`:
 #   security  = only ${distro_id}-security  (conservative, recommended)
 #   patch     = security + ${distro_id}-updates  (auto-apply stable patches too)
-unattended_upgrades_mode: security
-unattended_upgrades_reboot: "true"
+common_unattended_upgrades_mode: security
+common_unattended_upgrades_reboot: "true"
 # 04:00 is intentional — restic backup fires at 03:00 with a 15-min random jitter;
 # rebooting before backup finishes would SIGTERM an in-flight snapshot.
-unattended_upgrades_reboot_time: "04:00"
+common_common_unattended_upgrades_reboot_time: "04:00"
 # Optional: email address for unattended-upgrades reports. Empty = no emails.
-unattended_upgrades_mail: ""
+common_unattended_upgrades_mail: ""
 
 # APT packages pinned so unattended-upgrades won't bump major versions.
-apt_pinned_packages:
+common_apt_pinned_packages:
   - docker-ce
   - docker-ce-cli
   - containerd.io
