@@ -39,7 +39,7 @@ jobs:
         # runner are a known unauth-RCE vector. Refuse to merge workflows that
         # introduce them.
         run: |
-          if grep -rEn 'pull_request_target:|^[[:space:]]*workflow_run:' .github/workflows/; then
+          if grep -rEn '^[[:space:]]*(pull_request_target|workflow_run):' .github/workflows/; then
             echo "::error::workflow uses pull_request_target or workflow_run — unsafe with a self-hosted runner"
             exit 1
           fi
