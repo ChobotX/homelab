@@ -1,7 +1,7 @@
 ---
 # Managed by Ansible.
 global:
-  scrape_interval: {{ prometheus_scrape_interval }}
+  scrape_interval: {{ observability_prometheus_scrape_interval }}
   evaluation_interval: 30s
   external_labels:
     cluster: homelab
@@ -40,13 +40,13 @@ scrape_configs:
       - targets: ['alertmanager:9093']
     metrics_path: /metrics
 
-{% if homeassistant_host | length > 0 %}
+{% if (homeassistant_host | default('')) | length > 0 %}
   - job_name: homeassistant
     scrape_interval: 60s
-    metrics_path: {{ homeassistant_metrics_path }}
+    metrics_path: {{ observability_homeassistant_metrics_path }}
     scheme: http
     authorization:
-      credentials: "{{ homeassistant_metrics_token }}"
+      credentials: "{{ homeassistant_metrics_token | default('') }}"
     static_configs:
       - targets: ['{{ homeassistant_host }}']
 {% endif %}

@@ -2,41 +2,35 @@
 observability_network: observability
 observability_host: "grafana.{{ homelab_domain }}"
 
-grafana_image: "grafana/grafana:11.3.1@sha256:fa801ab6e1ae035135309580891e09f7eb94d1abdbd2106bdc288030b028158c"
-prometheus_image: "prom/prometheus:v3.1.0@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218"
-loki_image: "grafana/loki:3.3.2@sha256:8af2de1abbdd7aa92b27c9bcc96f0f4140c9096b507c77921ffddf1c6ad6c48f"
-tempo_image: "grafana/tempo:2.6.1@sha256:ef4384fce6e8ad22b95b243d8fc165628cda655376fd50e7850536ad89d71d50"
-alertmanager_image: "prom/alertmanager:v0.28.0@sha256:d5155cfac40a6d9250ffc97c19db2c5e190c7bc57c6b67125c94903358f8c7d8"
-alloy_image: "grafana/alloy:v1.5.1@sha256:01a63f4e032ce54ee94b22049bc27f597e74f85566478c377f4b5c7f020c1eb3"
+observability_grafana_image: "grafana/grafana:11.3.1@sha256:fa801ab6e1ae035135309580891e09f7eb94d1abdbd2106bdc288030b028158c"
+observability_prometheus_image: "prom/prometheus:v3.1.0@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218"
+observability_loki_image: "grafana/loki:3.3.2@sha256:8af2de1abbdd7aa92b27c9bcc96f0f4140c9096b507c77921ffddf1c6ad6c48f"
+observability_tempo_image: "grafana/tempo:2.6.1@sha256:ef4384fce6e8ad22b95b243d8fc165628cda655376fd50e7850536ad89d71d50"
+observability_alertmanager_image: "prom/alertmanager:v0.28.0@sha256:d5155cfac40a6d9250ffc97c19db2c5e190c7bc57c6b67125c94903358f8c7d8"
+observability_alloy_image: "grafana/alloy:v1.5.1@sha256:01a63f4e032ce54ee94b22049bc27f597e74f85566478c377f4b5c7f020c1eb3"
 
-prometheus_retention: "30d"
-prometheus_scrape_interval: "30s"
-loki_retention_hours: 336
-tempo_retention_hours: 168
+observability_prometheus_retention: "30d"
+observability_prometheus_scrape_interval: "30s"
+observability_loki_retention_hours: 336
+observability_tempo_retention_hours: 168
 
-# Optional Home Assistant scrape — empty disables.
-homeassistant_host: ""
-homeassistant_metrics_path: "/api/prometheus"
-
-# Optional SMTP relay for alerts — empty disables email routing.
-alertmanager_smtp_host: ""
-alertmanager_smtp_from: ""
-alertmanager_email_to: ""
+# Optional Home Assistant scrape path. Host (homeassistant_host) + token come from /etc/homelab/.
+observability_homeassistant_metrics_path: "/api/prometheus"
 
 # Container resource caps (single-host budget).
-grafana_mem_limit: "256m"
-prometheus_mem_limit: "512m"
-loki_mem_limit: "256m"
-tempo_mem_limit: "256m"
-alertmanager_mem_limit: "64m"
-alloy_mem_limit: "128m"
+observability_grafana_mem_limit: "256m"
+observability_prometheus_mem_limit: "512m"
+observability_loki_mem_limit: "256m"
+observability_tempo_mem_limit: "256m"
+observability_alertmanager_mem_limit: "64m"
+observability_alloy_mem_limit: "128m"
 
 # Container UIDs for bind-mount ownership.
-grafana_uid: 472
-grafana_gid: 472
-prometheus_uid: 65534
-prometheus_gid: 65534
-loki_uid: 10001
-loki_gid: 10001
-tempo_uid: 10001
-tempo_gid: 10001
+observability_grafana_uid: 472
+observability_grafana_gid: 472
+observability_prometheus_uid: 65534
+observability_prometheus_gid: 65534
+observability_loki_uid: 10001
+observability_loki_gid: 10001
+observability_tempo_uid: 10001
+observability_tempo_gid: 10001

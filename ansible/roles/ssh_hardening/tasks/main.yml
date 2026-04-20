@@ -14,13 +14,13 @@
   # otherwise renaming admin_user or corrupting the file = lockout.
   ansible.builtin.stat:
     path: "/home/{{ admin_user }}/.ssh/authorized_keys"
-  register: admin_auth_keys
+  register: ssh_hardening_admin_auth_keys
 
 - name: Refuse to continue without a valid admin authorized_keys file
   ansible.builtin.assert:
     that:
-      - admin_auth_keys.stat.exists
-      - admin_auth_keys.stat.size | int > 0
+      - ssh_hardening_admin_auth_keys.stat.exists
+      - ssh_hardening_admin_auth_keys.stat.size | int > 0
     fail_msg: >
       /home/{{ admin_user }}/.ssh/authorized_keys is missing or empty.
       Run bootstrap.sh (or ansible-playbook with LAPTOP_PUBKEY set) before

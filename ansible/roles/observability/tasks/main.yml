@@ -21,32 +21,32 @@
   ansible.builtin.file:
     path: /opt/observability/data/grafana
     state: directory
-    owner: "{{ grafana_uid }}"
-    group: "{{ grafana_gid }}"
+    owner: "{{ observability_grafana_uid }}"
+    group: "{{ observability_grafana_gid }}"
     mode: "0755"
 
 - name: Ensure Prometheus data dir (owned by nobody/nogroup)
   ansible.builtin.file:
     path: /opt/observability/data/prometheus
     state: directory
-    owner: "{{ prometheus_uid }}"
-    group: "{{ prometheus_gid }}"
+    owner: "{{ observability_prometheus_uid }}"
+    group: "{{ observability_prometheus_gid }}"
     mode: "0755"
 
 - name: Ensure Loki data dir (owned by loki UID)
   ansible.builtin.file:
     path: /opt/observability/data/loki
     state: directory
-    owner: "{{ loki_uid }}"
-    group: "{{ loki_gid }}"
+    owner: "{{ observability_loki_uid }}"
+    group: "{{ observability_loki_gid }}"
     mode: "0755"
 
 - name: Ensure Tempo data dir (owned by tempo UID)
   ansible.builtin.file:
     path: /opt/observability/data/tempo
     state: directory
-    owner: "{{ tempo_uid }}"
-    group: "{{ tempo_gid }}"
+    owner: "{{ observability_tempo_uid }}"
+    group: "{{ observability_tempo_gid }}"
     mode: "0755"
 
 - name: Create shared observability network
@@ -125,7 +125,7 @@
     src: grafana-datasources.yml.j2
     dest: /opt/observability/grafana/provisioning/datasources/datasources.yml
     owner: root
-    group: "{{ grafana_gid }}"
+    group: "{{ observability_grafana_gid }}"
     mode: "0640"
   notify: Restart observability stack
 
@@ -134,7 +134,7 @@
     src: grafana-dashboards.yml.j2
     dest: /opt/observability/grafana/provisioning/dashboards/dashboards.yml
     owner: root
-    group: "{{ grafana_gid }}"
+    group: "{{ observability_grafana_gid }}"
     mode: "0640"
   notify: Restart observability stack
 
@@ -143,7 +143,7 @@
     src: "{{ item }}"
     dest: /opt/observability/grafana/dashboards/
     owner: root
-    group: "{{ grafana_gid }}"
+    group: "{{ observability_grafana_gid }}"
     mode: "0640"
   with_fileglob:
     - "dashboards/*.json"
