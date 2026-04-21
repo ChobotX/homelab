@@ -2,7 +2,6 @@
 Description=Restic backup (managed by Ansible)
 Wants=network-online.target
 After=network-online.target
-OnFailure=status-email@%n.service
 
 [Service]
 Type=oneshot
