@@ -640,28 +640,40 @@
     },
     {
       "type": "timeseries",
-      "title": "GPU power",
+      "title": "Compute power (est.)",
+      "description": "RAPL (CPU pkg + DRAM) + NVIDIA GPU draw, stacked. Undersells real PSU draw by ~30-50W baseline (mobo/fans/storage/PSU losses not visible to OS). Tracks load delta accurately.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 49 },
       "id": 44,
       "fieldConfig": {
         "defaults": {
           "unit": "watt",
-          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 15 }
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 30,
+            "stacking": { "mode": "normal" }
+          }
         }
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "nvidia_smi_power_draw_watts",
-          "legendFormat": "draw",
+          "expr": "sum(rate(node_rapl_package_joules_total[5m]))",
+          "legendFormat": "CPU pkg",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "nvidia_smi_power_limit_watts",
-          "legendFormat": "limit",
+          "expr": "sum(rate(node_rapl_dram_joules_total[5m]))",
+          "legendFormat": "DRAM",
           "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(nvidia_smi_power_draw_watts)",
+          "legendFormat": "GPU",
+          "refId": "C"
         }
       ]
     }
@@ -675,6 +687,6 @@
   "timezone": "",
   "title": "Homelab Overview",
   "uid": "homelab-overview",
-  "version": 7,
+  "version": 8,
   "weekStart": ""
 }
