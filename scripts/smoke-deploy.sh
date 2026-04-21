@@ -94,16 +94,26 @@ ok "alertmanager ready"
 
 # End-to-end HTTPS reachability via Traefik — catches drift between
 # loadbalancer healthcheck wiring, backend ports, and cert resolution.
-# --resolve pins to the WG IP (traefik's actual bind) so we don't depend on Cloudflare DNS here.
+# --resolve pins to the WG IP (traefik's actual bind).
+#
+# Host-side curl → <wg_ip>:443 hits Docker's hairpin-NAT chain: source IP is
+# rewritten to the bridge gateway (e.g. 172.18.0.1), which the wg-only
+# middleware then denies with 403. That 403 actually proves router + TLS +
+# middleware are all wired correctly — same logic as alertmanager's 401 for
+# basic-auth. Real WG clients (laptop) bypass the NAT path and get 200.
+# Anything other than 200/403 (502, timeout, 404) means genuine breakage.
 for endpoint in \
   "grafana.${domain}|/api/health" \
   "vault.${domain}|/alive"
 do
   host="${endpoint%%|*}"
   path="${endpoint##*|}"
-  curl -fsS -m 5 --resolve "${host}:443:${wg_ip}" "https://${host}${path}" >/dev/null \
-    || fail "HTTPS ${host}${path} not reachable via Traefik"
-  ok "HTTPS ${host}${path} reachable"
+  code=$(curl -sS -m 5 --resolve "${host}:443:${wg_ip}" \
+    -o /dev/null -w "%{http_code}" "https://${host}${path}" || echo 0)
+  case "$code" in
+    200|403) ok "HTTPS ${host}${path} reachable (${code})" ;;
+    *)       fail "HTTPS ${host}${path} returned ${code}" ;;
+  esac
 done
 
 # Alertmanager is behind basic-auth middleware — a 401 proves Traefik
@@ -112,8 +122,8 @@ done
 code=$(curl -sS -m 5 --resolve "alertmanager.${domain}:443:${wg_ip}" \
   -o /dev/null -w "%{http_code}" "https://alertmanager.${domain}/-/ready" || echo 0)
 case "$code" in
-  200|401) ok "HTTPS alertmanager.${domain} reachable (${code})" ;;
-  *)       fail "HTTPS alertmanager.${domain} returned ${code}" ;;
+  200|401|403) ok "HTTPS alertmanager.${domain} reachable (${code})" ;;
+  *)           fail "HTTPS alertmanager.${domain} returned ${code}" ;;
 esac
 
 ok "all smoke checks passed"
