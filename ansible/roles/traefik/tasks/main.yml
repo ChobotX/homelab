@@ -75,6 +75,14 @@
     group: root
     mode: "0644"
 
+- name: Template HA reverse-proxy route (file provider)
+  ansible.builtin.template:
+    src: dynamic-homeassistant.yml.j2
+    dest: /opt/traefik/dynamic/homeassistant.yml
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Template .env
   ansible.builtin.template:
     src: env.j2
