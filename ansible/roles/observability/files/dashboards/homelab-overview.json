@@ -41,7 +41,7 @@
       "type": "stat",
       "title": "CPU %",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "gridPos": { "h": 5, "w": 5, "x": 0, "y": 1 },
       "id": 1,
       "fieldConfig": {
         "defaults": {
@@ -77,7 +77,7 @@
       "type": "stat",
       "title": "Memory %",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "gridPos": { "h": 5, "w": 5, "x": 5, "y": 1 },
       "id": 2,
       "fieldConfig": {
         "defaults": {
@@ -113,7 +113,7 @@
       "type": "stat",
       "title": "Disk /",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "gridPos": { "h": 5, "w": 5, "x": 10, "y": 1 },
       "id": 3,
       "fieldConfig": {
         "defaults": {
@@ -147,10 +147,47 @@
     },
     {
       "type": "stat",
+      "title": "GPU %",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 5, "x": 15, "y": 1 },
+      "id": 4,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 90 }
+            ]
+          },
+          "noValue": "no GPU"
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "max(nvidia_smi_utilization_gpu_ratio) * 100",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
       "title": "Uptime",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
-      "id": 4,
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 1 },
+      "id": 5,
       "fieldConfig": {
         "defaults": {
           "unit": "s",
@@ -494,117 +531,45 @@
       "panels": []
     },
     {
-      "type": "stat",
-      "title": "CPU package",
+      "type": "timeseries",
+      "title": "CPU utilization per core",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 41 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 41 },
       "id": 40,
       "fieldConfig": {
         "defaults": {
-          "unit": "celsius",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "red", "value": 85 }
-            ]
-          }
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 5 }
         }
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "colorMode": "value",
-        "graphMode": "area",
-        "textMode": "auto"
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": [] }
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "max(node_hwmon_temp_celsius{chip=~\".*coretemp.*\",sensor=\"temp1\"})",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "type": "stat",
-      "title": "GPU temp",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 41 },
-      "id": 41,
-      "fieldConfig": {
-        "defaults": {
-          "unit": "celsius",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 75 },
-              { "color": "red", "value": 85 }
-            ]
-          },
-          "noValue": "no GPU"
-        }
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "colorMode": "value",
-        "graphMode": "area",
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "max(nvidia_smi_temperature_gpu)",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "type": "stat",
-      "title": "VRAM used",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 41 },
-      "id": 42,
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 3221225472 },
-              { "color": "red", "value": 4831838208 }
-            ]
-          },
-          "noValue": "no GPU"
-        }
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "colorMode": "value",
-        "graphMode": "area",
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(nvidia_smi_memory_used_bytes)",
+          "expr": "(1 - rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100",
+          "legendFormat": "cpu{{cpu}}",
           "refId": "A"
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "CPU cores",
+      "title": "CPU temperature per core",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 46 },
-      "id": 43,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 },
+      "id": 41,
       "fieldConfig": {
         "defaults": {
           "unit": "celsius",
           "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 5 }
         }
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": [] }
       },
       "targets": [
         {
@@ -619,8 +584,8 @@
       "type": "timeseries",
       "title": "GPU utilization",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 46 },
-      "id": 44,
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 49 },
+      "id": 42,
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
@@ -633,14 +598,43 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "nvidia_smi_utilization_gpu_ratio",
-          "legendFormat": "GPU {{uuid}}",
+          "legendFormat": "GPU",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "nvidia_smi_utilization_memory_ratio",
-          "legendFormat": "VRAM bw {{uuid}}",
+          "legendFormat": "VRAM bw",
           "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU temperature",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 49 },
+      "id": 43,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 15 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 75 },
+              { "color": "red", "value": 85 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "nvidia_smi_temperature_gpu",
+          "legendFormat": "GPU",
+          "refId": "A"
         }
       ]
     },
@@ -648,8 +642,8 @@
       "type": "timeseries",
       "title": "GPU power",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 46 },
-      "id": 45,
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 49 },
+      "id": 44,
       "fieldConfig": {
         "defaults": {
           "unit": "watt",
@@ -681,6 +675,6 @@
   "timezone": "",
   "title": "Homelab Overview",
   "uid": "homelab-overview",
-  "version": 5,
+  "version": 6,
   "weekStart": ""
 }
