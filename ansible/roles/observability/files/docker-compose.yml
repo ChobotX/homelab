@@ -105,6 +105,10 @@ services:
     user: "${LOKI_UID}:${LOKI_GID}"
     command:
       - -config.file=/etc/loki/config.yml
+    # Push endpoint published on WG IP only — other peers (HA) can ship logs
+    # without going through Traefik. WG-only stays enforced at the network layer.
+    ports:
+      - "${WG_IP}:3100:3100/tcp"
     volumes:
       - ./data/loki:/loki
       - ./loki-config.yml:/etc/loki/config.yml:ro

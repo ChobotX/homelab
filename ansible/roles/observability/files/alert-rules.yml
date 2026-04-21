@@ -129,6 +129,31 @@ groups:
         annotations:
           summary: "HA backup freshness exporter has not run in {{ $value | humanizeDuration }}"
 
+  - name: homeassistant
+    interval: 1m
+    rules:
+      - alert: HomeAssistantDown
+        # Prom scrape target offline — HA is unreachable or the /api/prometheus
+        # endpoint returned an error. Covers both HA Core crashed and HAOS WG
+        # down (host-level `wg0` is the path the scrape takes back).
+        expr: up{job="homeassistant"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Home Assistant scrape target down for {{ $value | humanizeDuration }}"
+
+      - alert: HomeAssistantAlloyDown
+        # Alloy on HAOS ships journald → Loki. If the scrape target is down,
+        # either the container crashed, HAOS hung, or the WG tunnel dropped.
+        # Prom scrape address: 10.8.0.7:12345 (see prometheus.yml.j2 job).
+        expr: up{job="homeassistant-alloy"} == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alloy on HAOS down for {{ $value | humanizeDuration }} — HA logs not flowing"
+
   - name: certs
     interval: 1m
     rules:

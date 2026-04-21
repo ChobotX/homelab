@@ -17,6 +17,9 @@ observability_tempo_retention_hours: 168
 
 # Home Assistant scrape path. Host + token are required, come from /etc/homelab/.
 observability_homeassistant_metrics_path: "/api/prometheus"
+# HAOS host-level WG IP — Alloy on HAOS binds its /metrics on this address so
+# Prom can scrape it over WG. Override in /etc/homelab/config.yml if different.
+observability_homeassistant_wg_ip: "10.8.0.7"
 
 # Container resource caps (single-host budget).
 observability_grafana_mem_limit: "256m"

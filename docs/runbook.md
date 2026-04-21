@@ -103,21 +103,110 @@ Expect at least one `.tar`. Cross-check in HA: `ssh homeassistant 'cat /mnt/data
 
 ## Home Assistant — ship logs + metrics
 
-**Metrics**: on the HA box, create a Long-Lived Access Token (Profile → Security → Long-Lived Access Tokens). Put it in `/etc/homelab/secrets/homeassistant_metrics_token` on the homelab, and add `homeassistant_host: "10.8.0.5:8123"` to `/etc/homelab/config.yml`. Prometheus scrape kicks in on next deploy.
+HA (HAOS on RPi4) is a first-class homelab observability citizen via WireGuard. Metrics are pulled; logs are pushed.
 
-**Logs**: add to HA's `configuration.yaml`:
+### Metrics (Prometheus pulls)
 
-```yaml
-logger:
-  default: info
-syslog:
-  host: 10.8.0.6
-  port: 514
-  protocol: udp
-  facility: local0
+1. On the HA box, enable the [Prometheus integration](https://www.home-assistant.io/integrations/prometheus/) in `/config/configuration.yaml`:
+   ```yaml
+   prometheus:
+     namespace: hass
+   ```
+   Restart HA (`ha core restart`). Without this, `/api/prometheus` returns 404 and the scrape shows `health=down`.
+2. Create a Long-Lived Access Token (HA → Profile → Security → Long-Lived Access Tokens).
+3. On the homelab, put the token in `/etc/homelab/secrets/homeassistant_metrics_token` and add `homeassistant_host: "<ip>:8123"` to `/etc/homelab/config.yml` (WG IP like `10.8.0.7:8123` once HA is a WG peer at host level, or a LAN IP routed via WG).
+4. Deploy — Prometheus scrape kicks in on next reload.
+
+Dashboard: Grafana auto-provisions **Home Assistant** (folder *Homelab*) — up status, entity count, sensor temps/humidity/battery/kWh, and a live error/warn log panel. PromQL assumes `namespace: hass`.
+
+### Logs (Alloy on HAOS pushes to Loki)
+
+HA Core does not forward logs natively. Run Grafana Alloy on HAOS itself — it reads journald (which captures HA Core, add-ons, supervisor, host) and pushes to the homelab's Loki push endpoint over WG.
+
+**Pre-req — HAOS is a WG peer at host level (not inside the add-on):**
+
+1. Generate keypair + PSK on HAOS (use the WG add-on container's `wg` binary, e.g. `docker exec addon_a0d7b954_wireguard wg genkey | tee priv | wg pubkey`).
+2. Add a peer entry on the Hetzner hub (`tauri-hetzner:/etc/wireguard/wg0.conf`) with the new pubkey and a free `10.8.0.X/32` AllowedIP, then `wg syncconf wg0 <(wg-quick strip wg0)`.
+3. Drop a NetworkManager connection on HAOS at `/etc/NetworkManager/system-connections/wg0.nmconnection`:
+   ```ini
+   [connection]
+   id=wg0
+   type=wireguard
+   interface-name=wg0
+   autoconnect=true
+
+   [wireguard]
+   private-key=<HAOS private key>
+   listen-port=51821
+   mtu=1420
+
+   [wireguard-peer.cqwla9881cTaocDouZZacygTDEOYXztyR+BL8EVdOxw=]
+   endpoint=159.69.40.75:51820
+   preshared-key=<PSK>
+   preshared-key-flags=0
+   persistent-keepalive=25
+   allowed-ips=10.8.0.0/24;
+
+   [ipv4]
+   method=manual
+   address1=10.8.0.X/32
+   route-metric=50
+   never-default=true
+
+   [ipv6]
+   method=disabled
+   ```
+   `chmod 600` the file, then `nmcli connection reload && nmcli connection up wg0`.
+4. Verify from HA Core container: `docker exec homeassistant ping 10.8.0.6`.
+
+Note: listen port `51821` avoids clashing with the legacy WG add-on (`51820`) during migration. Decommission the add-on peer once host-level WG is stable.
+
+**Alloy container on HAOS** (unmanaged docker, not a supervisor add-on):
+
+Config at `/mnt/data/alloy/config/config.alloy`:
+```alloy
+logging { level = "warn", format = "logfmt" }
+
+loki.write "default" {
+  endpoint { url = "http://10.8.0.6:3100/loki/api/v1/push" }
+}
+
+loki.source.journal "hass" {
+  path          = "/var/log/journal"
+  max_age       = "12h"
+  forward_to    = [loki.relabel.hass.receiver]
+  labels        = { job = "homeassistant", host = "haos" }
+  relabel_rules = loki.relabel.journal_meta.rules
+}
+
+loki.relabel "journal_meta" {
+  forward_to = []
+  rule { source_labels = ["__journal__systemd_unit"]       target_label = "unit" }
+  rule { source_labels = ["__journal_container_name"]      target_label = "container" }
+  rule { source_labels = ["__journal_priority_keyword"]    target_label = "level" }
+  rule { source_labels = ["__journal__hostname"]           target_label = "host" }
+}
+
+loki.relabel "hass" { forward_to = [loki.write.default.receiver] }
 ```
 
-Loki receives via Alloy's syslog listener on the WG IP. Query: `{job="syslog"}` in Grafana's Loki datasource.
+Start:
+```bash
+ssh homeassistant 'docker run -d --name alloy --restart unless-stopped --network host --user 0:0 \
+  -v /var/log/journal:/var/log/journal:ro \
+  -v /run/log/journal:/run/log/journal:ro \
+  -v /etc/machine-id:/etc/machine-id:ro \
+  -v /mnt/data/alloy/config/config.alloy:/etc/alloy/config.alloy:ro \
+  -v /mnt/data/alloy/data:/var/lib/alloy \
+  grafana/alloy:v1.5.1 \
+  run --server.http.listen-addr=10.8.0.7:12345 --storage.path=/var/lib/alloy /etc/alloy/config.alloy'
+```
+
+The HTTP server binds to the HAOS host WG IP (10.8.0.7) so homelab Prom can scrape Alloy at `http://10.8.0.7:12345/metrics` — job `homeassistant-alloy`. `HomeAssistantAlloyDown` alert fires if this scrape goes to 0 for 10m (dead container, dead tunnel, dead HAOS).
+
+Loki push endpoint is published on `10.8.0.6:3100` by the observability compose (`${WG_IP}:3100:3100/tcp`) — WG-only, no extra auth needed. Query: `{job="homeassistant"}` in the Loki datasource.
+
+**Caveat**: HA supervisor flags this as `unsupported: ["software"]` because `grafana/alloy` is not a supervisor-managed add-on. It's a banner only — HA Core + add-ons + HA Cloud all keep working. Tried packaging as a local add-on: failed because HA's add-on sandbox blocks bind-mounting `/var/log/journal` (and `docker_api: true` only exposes supervisor's REST proxy, not the Docker socket). Accepted trade-off for journald coverage.
 
 ## Firewall (UFW) — check
 

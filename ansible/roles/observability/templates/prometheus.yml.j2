@@ -57,3 +57,13 @@ scrape_configs:
       credentials: "{{ homeassistant_metrics_token }}"
     static_configs:
       - targets: ['{{ homeassistant_host }}']
+
+  # Alloy container on HAOS — exposes its own /metrics on the WG IP so this
+  # homelab Prom can scrape it over WG. Alerts on `up{job=...}=0` flag
+  # dead-tunnel / dead-Alloy / dead-HAOS in one shot.
+  - job_name: homeassistant-alloy
+    scrape_interval: 60s
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets: ['{{ observability_homeassistant_wg_ip }}:12345']
