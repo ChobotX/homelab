@@ -609,7 +609,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "node_hwmon_temp_celsius{chip=~\".*coretemp.*\"} + 0 * on(chip,sensor) group_left(label) node_hwmon_sensor_label",
+          "expr": "node_hwmon_temp_celsius{chip=~\".*coretemp.*\",sensor!=\"temp1\"} * on(chip,sensor) group_left(label) (node_hwmon_sensor_label == 1)",
           "legendFormat": "{{label}}",
           "refId": "A"
         }
@@ -681,6 +681,6 @@
   "timezone": "",
   "title": "Homelab Overview",
   "uid": "homelab-overview",
-  "version": 4,
+  "version": 5,
   "weekStart": ""
 }
