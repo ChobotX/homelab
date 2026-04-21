@@ -5,7 +5,7 @@
 # script is the homelab's only visibility into whether that pipeline is alive.
 set -euo pipefail
 
-REMOTE_DIR="{{ ha_backup_remote_path }}"
+REMOTE_DIR="{{ backup_ha_remote_path }}"
 OUT=/var/lib/node_exporter/textfile/ha_backup.prom
 
 LATEST=$(ssh \

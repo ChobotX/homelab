@@ -28,7 +28,7 @@ backup_keep_monthly: 6
 # Path relative to the Storage Box home dir where HA's CIFS mount writes tars.
 # If HA's CIFS share is `backup/homeassistant`, the tars land in `homeassistant/`
 # when seen via SSH/SFTP (the `backup` share == the user's home dir).
-ha_backup_remote_path: "homeassistant"
+backup_ha_remote_path: "homeassistant"
 # Set false to skip deploying the exporter + timer (e.g. if HA off-site backup
 # is ever removed). Leaves the gauge absent instead of reporting zero.
-ha_backup_monitor_enabled: true
+backup_ha_monitor_enabled: true
