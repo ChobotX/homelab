@@ -8,17 +8,22 @@ set -euo pipefail
 REMOTE_DIR="{{ backup_ha_remote_path }}"
 OUT=/var/lib/node_exporter/textfile/ha_backup.prom
 
-LATEST=$(ssh \
+# Hetzner Storage Box runs a restricted shell that does NOT support pipes,
+# redirections, or subshells — the whole `| awk | sort | tail` tail was
+# previously passed as literal args to `ls`, silently producing no output.
+# Parse on the client side instead.
+LISTING=$(ssh \
   -i /root/.ssh/homelab_sb_id_ed25519 \
-  -p 23 \
+  -p {{ backup_sftp_port }} \
   -o BatchMode=yes \
   -o ConnectTimeout=30 \
   -o StrictHostKeyChecking=yes \
   -o UserKnownHostsFile=/root/.ssh/known_hosts_sb \
   {{ restic_sftp_user }}@{{ restic_sftp_host }} \
-  "ls -l --time-style=+%s ${REMOTE_DIR}/*.tar 2>/dev/null | awk '{print \$6}' | sort -n | tail -1" \
-  2>/dev/null || echo "")
+  "ls -l --time-style=+%s ${REMOTE_DIR}/*.tar" \
+  2>/dev/null || true)
 
+LATEST=$(printf '%s\n' "$LISTING" | awk '/\.tar$/ {print $6}' | sort -n | tail -1)
 LATEST=${LATEST:-0}
 
 {

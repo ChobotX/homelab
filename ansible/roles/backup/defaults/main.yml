@@ -24,6 +24,12 @@ backup_keep_daily: 7
 backup_keep_weekly: 4
 backup_keep_monthly: 6
 
+# Hetzner Storage Box SSH port (23 = full SFTP + restricted shell + rsync/borg).
+# Port 22 serves only SFTP and exposes different host keys, so keyscan MUST
+# target 23 or ssh calls fail StrictHostKeyChecking and the HA freshness
+# exporter silently reports 0 (which triggers HomeAssistantBackupStale).
+backup_sftp_port: 23
+
 # Home Assistant backup freshness exporter.
 # Path relative to the Storage Box home dir where HA's CIFS mount writes tars.
 # If HA's CIFS share is `backup/homeassistant`, the tars land in `homeassistant/`

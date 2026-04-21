@@ -78,9 +78,15 @@
   when: not backup_uses_sftp
 
 - name: Scan SFTP host keys (computes known_hosts on the fly)
+  # Must target the real SFTP port (23). Port 22 exposes different host keys,
+  # and a known_hosts entry keyed to `[host]:22` won't match an ssh connection
+  # to `[host]:23` → StrictHostKeyChecking fails silently inside the HA
+  # freshness exporter and the gauge collapses to 0.
   ansible.builtin.command:
     argv:
       - ssh-keyscan
+      - -p
+      - "{{ backup_sftp_port | string }}"
       - -t
       - ed25519,rsa
       - "{{ restic_sftp_host }}"
@@ -116,6 +122,7 @@
     block: |
       Host {{ restic_sftp_host | default('') }}
         User {{ restic_sftp_user | default('') }}
+        Port {{ backup_sftp_port }}
         IdentityFile /root/.ssh/homelab_sb_id_ed25519
         IdentitiesOnly yes
         UserKnownHostsFile /root/.ssh/known_hosts_sb
