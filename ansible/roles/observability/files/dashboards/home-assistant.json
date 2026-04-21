@@ -166,8 +166,89 @@
     },
     {
       "type": "row",
-      "title": "Sensors",
+      "title": "Raspberry Pi host",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "id": 103,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "RPi CPU temp",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 7 },
+      "id": 30,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "orange", "value": 75 },
+              { "color": "red",    "value": 80 }
+            ]
+          },
+          "noValue": "n/a"
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "hass_sensor_temperature_celsius{entity=\"sensor.rpi_cpu_temperature\"}",
+          "legendFormat": "CPU",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "RPi CPU temp over time",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 7 },
+      "id": 31,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "gradientMode": "scheme" },
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "orange", "value": 75 },
+              { "color": "red",    "value": 80 }
+            ]
+          },
+          "min": 30,
+          "max": 90
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false, "calcs": ["lastNotNull", "max"] }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "hass_sensor_temperature_celsius{entity=\"sensor.rpi_cpu_temperature\"}",
+          "legendFormat": "RPi CPU",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Sensors",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
       "id": 101,
       "collapsed": false,
       "panels": []
@@ -176,7 +257,7 @@
       "type": "timeseries",
       "title": "Temperature",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
       "id": 10,
       "fieldConfig": {
         "defaults": {
@@ -200,7 +281,7 @@
       "type": "timeseries",
       "title": "Humidity",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
       "id": 11,
       "fieldConfig": {
         "defaults": {
@@ -226,7 +307,7 @@
       "type": "timeseries",
       "title": "Battery level",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
       "id": 12,
       "fieldConfig": {
         "defaults": {
@@ -260,7 +341,7 @@
       "type": "timeseries",
       "title": "Power (kWh)",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
       "id": 13,
       "fieldConfig": {
         "defaults": {
@@ -283,7 +364,7 @@
     {
       "type": "row",
       "title": "Logs",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
       "id": 102,
       "collapsed": false,
       "panels": []
@@ -292,7 +373,7 @@
       "type": "logs",
       "title": "Home Assistant — errors & warnings",
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 31 },
       "id": 20,
       "options": {
         "showTime": true,

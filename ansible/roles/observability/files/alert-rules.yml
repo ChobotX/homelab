@@ -154,6 +154,27 @@ groups:
         annotations:
           summary: "Alloy on HAOS down for {{ $value | humanizeDuration }} — HA logs not flowing"
 
+      - alert: HomeAssistantRPiHot
+        # RPi CPU temp sensor from HA command_line integration (reads
+        # /sys/class/thermal/thermal_zone0/temp). Warn over 75°C sustained for
+        # 5m — throttling kicks in around 80°C on RPi4.
+        expr: hass_sensor_temperature_celsius{entity="sensor.rpi_cpu_temperature"} > 75
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RPi CPU on HA is {{ $value }}°C — sustained >75°C, check cooling"
+
+      - alert: HomeAssistantRPiThrottling
+        # Hard limit — RPi4 starts soft-throttling at 80°C, hard-throttling at
+        # 85°C. Anything sustained here means inadequate cooling or runaway load.
+        expr: hass_sensor_temperature_celsius{entity="sensor.rpi_cpu_temperature"} > 80
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RPi CPU on HA is {{ $value }}°C — in throttling range, act now"
+
   - name: certs
     interval: 1m
     rules:
