@@ -67,19 +67,26 @@ Check Vaultwarden: open `https://vault.<domain>`, log in with your existing Bitw
 
 ## Restoring Home Assistant
 
-HA backups live in the same restic repo under `--host homeassistant`, `--tag scheduled,ha`. Each snapshot contains one or more HA-native tarballs under `/backup/`.
+HA backups are **not** in the restic repo. They're HA-native `.tar` files written over CIFS to the Storage Box under `backup/homeassistant/` (plus one local copy on the HA box itself, if that option was left on).
 
-```bash
-# From the homelab (or any box with the restic repo env + password)
-sudo bash -c '. /etc/restic/restic.env && restic snapshots --host homeassistant --tag scheduled'
+**Happy path — HA is still up, just need a rollback:**
 
-# Extract to a scratch dir
-mkdir -p /tmp/ha-restore
-sudo bash -c '. /etc/restic/restic.env && restic restore <snapshot-id> --host homeassistant --target /tmp/ha-restore'
-ls /tmp/ha-restore/backup/*.tar
-```
+HA UI → Settings → System → Backups → pick the off-site entry (listed via the `hetzner_storage_box` agent) → Restore. HA downloads, decrypts, applies, reboots.
 
-Copy the chosen tar to the HAOS box and import via the UI (Settings → System → Backups → Upload). HAOS handles the in-place restore and reboot itself.
+**HA is gone — fresh HAOS install needed:**
+
+1. Reinstall HAOS on the RPi4 from the official image.
+2. First boot: skip onboarding, go straight to Settings → System → Backups → Upload backup.
+3. Grab the latest tar off the Storage Box:
+   ```bash
+   # Laptop
+   scp -P 23 u578479@u578479.your-storagebox.de:backup/homeassistant/<slug>.tar .
+   ```
+4. Upload via HA UI → Restore. Paste the backup password (saved in Vaultwarden).
+
+HA reboots and comes back as the old instance.
+
+**Don't have the backup password?** The tars are encrypted and unrecoverable. That's why the HA backup password must be in Vaultwarden before anything else.
 
 ## Testing the DR plan
 

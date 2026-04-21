@@ -68,47 +68,38 @@ sudo install -m 0400 -T <(openssl rand -base64 24) /etc/homelab/secrets/grafana_
 gh workflow run deploy.yml --ref main -f tags=observability
 ```
 
-## Home Assistant — off-site backups (shared restic repo)
+## Home Assistant — off-site backups (native → CIFS)
 
-HAOS (RPi4) pushes its native `.tar` backups into the same restic repo the homelab uses, separated by `--host homeassistant` so each client's retention is independent.
+HAOS (RPi4) uses its built-in Backup integration writing directly to the Hetzner Storage Box over CIFS. Not in the homelab's restic repo — separate retention, separate restore flow. Chosen because HA state is small (hundreds of MB), native UI is zero-maintenance, and no addon/restic key material needs to live on the HA box.
 
-**Install (one-time, on the HA box via UI):**
+**HA-side config (one-time, all via HA UI):**
 
-1. Supervisor → Add-on store → install a community **Restic** add-on (pin the version).
-2. In HA, generate a dedicated ed25519 SSH key for the add-on (keep the private key inside the add-on config, never in this repo).
-3. Append HA's pubkey to the Storage Box's `authorized_keys`:
-   ```bash
-   # From the laptop
-   cat ha-restic.pub | ssh -p 23 u578479@u578479.your-storagebox.de 'cat >> .ssh/authorized_keys'
-   ```
-4. Fetch the restic password once (from the homelab, printed to stdout — do not commit):
-   ```bash
-   sudo cat /etc/homelab/secrets/restic_password
-   ```
-   Paste it into the add-on's `RESTIC_PASSWORD`.
-5. Add-on config:
-   - repo: `sftp:u578479@u578479.your-storagebox.de:/restic`
-   - pre-backup hook: `ha backups new --name scheduled-offsite`
-   - paths: `/backup`
-   - tags: `scheduled,ha`
-   - host: `homeassistant`
-   - schedule: `02:30` daily (stays clear of the homelab's `03:00 + 15 min jitter` window)
-   - forget: `--host homeassistant --tag scheduled --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune`
+1. Ensure Samba/CIFS is enabled on the Storage Box (Hetzner Robot → Storage Box → Settings → Samba/CIFS).
+2. HA → Settings → System → Storage → Add network storage:
+   - Name: `hetzner_storage_box`
+   - Usage: Backup
+   - Server: `u578479.your-storagebox.de`
+   - Protocol: Samba/CIFS, version Auto (2.1+)
+   - Share: `backup` (or `backup/homeassistant` to land in a subdir)
+   - User: `u578479`
+   - Password: Storage Box account password (same one used elsewhere; no separate Samba password for the main user)
+3. HA → Settings → System → Backups → ⋮ → Automatic backups:
+   - Schedule: daily at a fixed time (e.g. `02:30`). `time: null` = HA picks a random slot and backups land mid-day — set it explicitly.
+   - Retention: `Copies to keep` = 7 (or matches homelab's 7d).
+   - Encryption: ON. **Save the backup password in Vaultwarden immediately** — lose it, tars decrypt is impossible.
+   - Locations: tick `hetzner_storage_box` + `This system` (one local copy for fast restore).
+   - Include: HA config + all add-ons + folders (`share`, `ssl` as needed).
 
-**Verify first cycle (from the homelab):**
+**Verify a backup landed on the box:**
 
 ```bash
-sudo bash -c '. /etc/restic/restic.env && restic snapshots --host homeassistant'
-sudo bash -c '. /etc/restic/restic.env && restic snapshots --host homelab | tail'
+ssh -p 23 u578479@u578479.your-storagebox.de 'ls -la backup/homeassistant/ 2>/dev/null | tail'
+# or just backup/ if no subdir
 ```
 
-Both lists must be non-empty after day 1. If homelab's list is empty, the `--host homelab` scoping in `restic-backup.sh` regressed — see `ansible/roles/backup/templates/restic-backup.sh.j2`.
+Expect at least one `.tar`. Cross-check in HA: `ssh homeassistant 'cat /mnt/data/supervisor/homeassistant/.storage/backup'` — look at `last_completed_automatic_backup`.
 
-**Rotate HA's SSH key:**
-
-Generate new key on HA add-on; replace HA's entry in `.ssh/authorized_keys` on the Storage Box (port 23). Homelab's key is untouched.
-
-**Critical invariant:** both clients must always call `restic forget` with their own `--host` tag. Dropping it on either side will prune the other client's snapshots. The homelab's scoping lives in `ansible/roles/backup/templates/restic-backup.sh.j2`.
+**The homelab's restic repo is untouched by HA.** No host-scoping interaction, no shared locks, no shared retention.
 
 ## Home Assistant — ship logs + metrics
 

@@ -12,9 +12,9 @@ PATHS=(
 )
 
 # Backup
-# --host is pinned so snapshots stay tagged `homelab` even if the hostname drifts,
-# and so forget --host homelab below can't touch other clients sharing this repo
-# (e.g. Home Assistant pushing into /restic with --host homeassistant).
+# --host is pinned so snapshots stay tagged `homelab` even if the hostname drifts.
+# (Defensive — no current co-tenant; HA backups are not in this restic repo, they
+# use HA's native backup integration + CIFS mount straight to the Storage Box.)
 restic backup \
   --host homelab \
   --tag scheduled \
@@ -22,7 +22,7 @@ restic backup \
   --one-file-system \
   "${PATHS[@]}"
 
-# Prune policy — host-scoped so co-tenants in the repo are not pruned.
+# Prune policy — host-scoped so unrelated snapshots in the repo are not pruned.
 restic forget \
   --host homelab \
   --tag scheduled \
@@ -34,11 +34,16 @@ restic forget \
 # Fast integrity check (structure only; full reads weekly via --read-data-subset).
 restic check
 
-# Publish completion timestamp for Prometheus (scraped by Alloy's node_exporter textfile collector).
-tmp=/var/lib/node_exporter/textfile/restic.prom.$$
-cat > "$tmp" <<PROM
+# Publish completion timestamp for Prometheus (scraped by Alloy's node_exporter
+# textfile collector). Non-fatal: a publish failure must not mark a successful
+# backup as failed — that's exactly the false positive that made this script
+# look broken for a full day.
+{
+  tmp=/var/lib/node_exporter/textfile/restic.prom.$$
+  cat > "$tmp" <<PROM
 # HELP restic_last_backup_timestamp_seconds Unix timestamp of last successful restic run.
 # TYPE restic_last_backup_timestamp_seconds gauge
 restic_last_backup_timestamp_seconds $(date +%s)
 PROM
-mv "$tmp" /var/lib/node_exporter/textfile/restic.prom
+  mv "$tmp" /var/lib/node_exporter/textfile/restic.prom
+} || echo "WARN: failed to publish restic.prom textfile (backup itself succeeded)" >&2

@@ -96,6 +96,39 @@ groups:
         annotations:
           summary: "restic backup stale — last run {{ $value | humanizeDuration }} ago on {{ $labels.instance }}"
 
+      - alert: HomeAssistantBackupStale
+        # Fires when the newest HA backup tar on the Storage Box is older than
+        # 36h (one missed nightly + half a day of grace). Exporter runs hourly
+        # from the backup role; poll failures keep the last known value until
+        # the next successful run overwrites it.
+        expr: (time() - ha_last_backup_timestamp_seconds) > 36 * 3600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Home Assistant off-site backup stale — newest tar {{ $value | humanizeDuration }} old"
+
+      - alert: HomeAssistantBackupMissing
+        # Exporter could not find any tar at all. Either HA has never written
+        # one, the CIFS mount is broken on the HA side, or the remote path
+        # in the role defaults drifted.
+        expr: ha_last_backup_timestamp_seconds == 0
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No Home Assistant backup tars found on the Storage Box"
+
+      - alert: HomeAssistantBackupExporterStuck
+        # Exporter itself hasn't run for 3h (hourly timer + jitter + grace).
+        # Probably systemd unit failed; investigate on the homelab.
+        expr: (time() - ha_backup_exporter_last_run_timestamp_seconds) > 3 * 3600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HA backup freshness exporter has not run in {{ $value | humanizeDuration }}"
+
   - name: certs
     interval: 1m
     rules:

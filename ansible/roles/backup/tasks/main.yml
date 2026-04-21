@@ -175,3 +175,57 @@
     state: started
     enabled: true
     daemon_reload: true
+
+# --- Home Assistant backup freshness exporter ----------------------------------
+# Polls the Storage Box over SSH (reuses the existing key), stats the newest
+# HA .tar and publishes the mtime as a node_exporter textfile gauge.
+# Required because HA writes its backups via CIFS outside the restic repo, so
+# the existing restic_last_backup_timestamp_seconds doesn't cover them.
+
+- name: Deploy HA backup freshness script
+  ansible.builtin.template:
+    src: ha-backup-freshness.sh.j2
+    dest: /usr/local/sbin/ha-backup-freshness.sh
+    owner: root
+    group: root
+    mode: "0750"
+  when: ha_backup_monitor_enabled and backup_uses_sftp
+
+- name: Deploy HA backup freshness service unit
+  ansible.builtin.template:
+    src: ha-backup-freshness.service.j2
+    dest: /etc/systemd/system/ha-backup-freshness.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: ha_backup_monitor_enabled and backup_uses_sftp
+  notify: Reload systemd
+
+- name: Deploy HA backup freshness timer unit
+  ansible.builtin.template:
+    src: ha-backup-freshness.timer.j2
+    dest: /etc/systemd/system/ha-backup-freshness.timer
+    owner: root
+    group: root
+    mode: "0644"
+  when: ha_backup_monitor_enabled and backup_uses_sftp
+  notify: Reload systemd
+
+- name: Enable and start the HA backup freshness timer
+  ansible.builtin.systemd:
+    name: ha-backup-freshness.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: ha_backup_monitor_enabled and backup_uses_sftp
+
+- name: Remove HA backup freshness units when monitor disabled
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/local/sbin/ha-backup-freshness.sh
+    - /etc/systemd/system/ha-backup-freshness.service
+    - /etc/systemd/system/ha-backup-freshness.timer
+  when: not (ha_backup_monitor_enabled and backup_uses_sftp)
+  notify: Reload systemd
