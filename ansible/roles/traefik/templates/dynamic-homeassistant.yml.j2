@@ -1,0 +1,22 @@
+# Managed by Ansible — Home Assistant reverse proxy route.
+# HA runs on HAOS, not on this host. Traefik reaches it over WireGuard via the
+# homelab peer's 192.168.68.0/24 route to {{ homeassistant_host }}. Listener is
+# already bound to ${WG_IP}:443 in the compose file; wg-only@file is a belt.
+http:
+  routers:
+    homeassistant:
+      rule: "Host(`{{ traefik_homeassistant_host }}`)"
+      entryPoints:
+        - websecure
+      service: homeassistant
+      tls:
+        certResolver: {{ traefik_cert_resolver }}
+      middlewares:
+        - security-headers@file
+        - wg-only@file
+  services:
+    homeassistant:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://{{ homeassistant_host }}"

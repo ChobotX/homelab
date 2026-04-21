@@ -2,3 +2,6 @@
 traefik_image: "traefik:v3.6.13@sha256:34d5089d0b414945342848518b383f11f5b3a645504ed87b77ffeb9d683d0e48"
 traefik_cert_resolver: cloudflare
 traefik_dashboard_host: "traefik.{{ homelab_domain }}"
+# Home Assistant proxy — HA runs on HAOS (off-host); Traefik fronts it over WG so
+# remote clients get HTTPS + the owebs.cz cert without exposing it to the internet.
+traefik_homeassistant_host: "ha.{{ homelab_domain }}"
