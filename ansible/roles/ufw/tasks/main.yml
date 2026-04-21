@@ -20,18 +20,21 @@
         - { name: http, port: "80" }
         - { name: https, port: "443" }
 
-    - name: Allow nvidia_gpu_exporter from Docker address pool
+    - name: Allow nvidia_gpu_exporter from Docker bridge networks
       # Exporter binds 0.0.0.0:9835 on host so Prometheus (in the observability
-      # bridge network) can reach it via host-gateway. Docker's default address
-      # pool (daemon.json default-address-pools) is 10.200.0.0/16 — no other
-      # source should reach this port, so restrict to the pool.
+      # bridge network) can reach it via host-gateway. Allow from all standard
+      # Docker private ranges — existing bridges pre-date daemon.json's
+      # default-address-pools so they sit in 172.16.0.0/12, not 10.200.0.0/16.
       when: nvidia_gpu_enabled | default(false) | bool
       community.general.ufw:
         rule: allow
         port: "9835"
         proto: tcp
-        src: "10.200.0.0/16"
+        src: "{{ item }}"
         comment: "nvidia-gpu-exporter-from-docker"
+      loop:
+        - "172.16.0.0/12"
+        - "10.200.0.0/16"
 
     - name: Default outgoing allow
       community.general.ufw:
