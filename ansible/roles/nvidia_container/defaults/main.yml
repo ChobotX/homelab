@@ -1,0 +1,12 @@
+---
+# Version pin for nvidia-container-toolkit (and co-installed libnvidia-container
+# shared libs). Check https://github.com/NVIDIA/nvidia-container-toolkit/releases
+# before bumping. Tag/digest-style isn't available for apt — pin the version
+# string and trust the apt signing chain (fingerprint asserted below) for
+# integrity.
+nvidia_container_toolkit_version: "1.19.0-1"
+
+# GPG key fingerprint for NVIDIA's libnvidia-container apt repo. Asserted
+# before the repo is enabled — same supply-chain posture as the docker role.
+# Published at https://nvidia.github.io/libnvidia-container/gpgkey.
+nvidia_container_gpg_fingerprint: "C95B321B61E88C1809C4F759DDCAE044F796ECB0"

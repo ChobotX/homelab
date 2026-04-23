@@ -9,5 +9,13 @@
     { "base": "10.200.0.0/16", "size": 24 }
   ],
   "no-new-privileges": true,
-  "userland-proxy": false
+  "userland-proxy": false,
+  "runtimes": {
+{% if nvidia_gpu_enabled | default(false) | bool %}
+    "nvidia": {
+      "path": "nvidia-container-runtime",
+      "runtimeArgs": []
+    }
+{% endif %}
+  }
 }

@@ -10,12 +10,14 @@
 #   storage        → /mnt/elements + bind mounts (runs before docker so compose
 #                    stacks see bind-mounted /opt/*/data|logs paths from boot)
 #   docker         → engine + compose + daemon.json
+#   nvidia_container → GPU container runtime (skipped when no NVIDIA hardware)
 #   observability  → LGTMT stack (runs before traefik so `observability` network exists)
 #   traefik        → reverse proxy, bound to wg0 IP, Cloudflare DNS-01, OTLP → tempo
 #   vaultwarden    → secret vault behind Traefik
 #   jellyfin       → media server behind Traefik (HW transcode if /dev/dri present)
 #   syncthing      → remote media ingest (sync protocol bound to WG IP)
 #   n8n            → workflow automation / webhook hub behind Traefik (WG-only)
+#   ollama         → local LLM inference (GPU), backend-only on proxy network
 #   homepage       → signpost page at home.<homelab_domain> (links + live widgets)
 #   backup         → restic systemd timer (last, so backup sees steady state)
 
@@ -119,6 +121,9 @@
       tags: [storage, base]
     - role: docker
       tags: [docker]
+    - role: nvidia_container
+      tags: [nvidia, gpu, base]
+      when: nvidia_gpu_enabled | default(false) | bool
     - role: observability
       tags: [observability, services]
     - role: traefik
@@ -131,6 +136,9 @@
       tags: [syncthing, media, services]
     - role: n8n
       tags: [n8n, automation, services]
+    - role: ollama
+      tags: [ollama, ai, services]
+      when: nvidia_gpu_enabled | default(false) | bool
     - role: homepage
       tags: [homepage, services]
     - role: backup

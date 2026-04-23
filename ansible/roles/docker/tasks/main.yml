@@ -86,8 +86,12 @@
     mode: "0755"
 
 - name: Deploy Docker daemon.json
-  ansible.builtin.copy:
-    src: daemon.json
+  # Templated so `runtimes.nvidia` is conditionally rendered when
+  # nvidia_gpu_enabled is true (set in site.yml from /usr/bin/nvidia-smi
+  # presence). Keeps daemon.json the single source of truth — no
+  # `nvidia-ctk runtime configure` mutating the file out-of-band.
+  ansible.builtin.template:
+    src: daemon.json.j2
     dest: /etc/docker/daemon.json
     owner: root
     group: root

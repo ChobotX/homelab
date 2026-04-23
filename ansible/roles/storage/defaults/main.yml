@@ -42,3 +42,7 @@ storage_binds:
   # n8n SQLite + execution history grow with workflow activity — HDD not SSD.
   - src: /opt/n8n/data
     dst: n8n-data
+  # Ollama weights are multi-GiB per model and re-downloadable, but the HDD
+  # still carries them to keep the SSD free for OS + docker overlays.
+  - src: /opt/ollama/models
+    dst: ollama-models

@@ -1,0 +1,28 @@
+---
+# Ollama inference server, amd64+arm64 manifest digest pinned alongside the tag.
+ollama_image: "ollama/ollama:0.21.1@sha256:cd33c5656285ca365c9c5495fe0240a70aef642088c6427c461fd54b62f80ffb"
+
+# ollama_host only used if a UI is ever fronted by Traefik. Inference API stays
+# internal-only on the `proxy` network; n8n reaches it via DNS name `ollama`.
+ollama_host: "ollama.{{ homelab_domain }}"
+
+# Models the role should `ollama pull` after the container is up. Pull is
+# idempotent — an already-present model is a no-op. Override per host in
+# host_vars when GPU VRAM changes (4b-it-qat on P2000 5G → 12b-it-qat on
+# 3060 Ti 8G).
+#
+# QAT = quantization-aware training. Google trains the model with Q4
+# quantization baked into the loss, so Q4 quality tracks closer to FP16 than
+# post-training-quantized `gemma3:4b` at identical VRAM cost.
+ollama_models:
+  - gemma3:4b-it-qat
+
+# Keep the last-loaded model resident instead of unloading after 5min idle.
+# Avoids cold-start latency on sporadic n8n webhook traffic — 4b weights
+# only cost ~3 GiB VRAM. Set to "0" to disable keep-alive (free VRAM for
+# other workloads) or a positive duration like "30m".
+ollama_keep_alive: "24h"
+
+# Where /root/.ollama lives inside the container. Bound to HDD via the
+# storage role (models are multi-GiB; SSD wear + capacity not worth it).
+ollama_models_root: /opt/ollama/models

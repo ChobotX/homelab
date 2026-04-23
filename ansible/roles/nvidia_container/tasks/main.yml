@@ -1,0 +1,96 @@
+---
+# This role wires the userspace bridge between docker and an already-present
+# NVIDIA kernel driver. Driver install is host/OS concern (out-of-band, e.g.
+# `ubuntu-drivers autoinstall`) — keeps the repo portable across HW changes.
+
+- name: Assert NVIDIA driver present on host
+  # The play-level nvidia_gpu_enabled fact is set from /usr/bin/nvidia-smi
+  # presence (site.yml pre_tasks). This role is a no-op without it.
+  ansible.builtin.assert:
+    that: nvidia_gpu_enabled | default(false) | bool
+    fail_msg: |
+      nvidia-smi not found on host. This role configures the container runtime
+      only — install the NVIDIA driver out-of-band before running the nvidia_container
+      role (e.g. `sudo ubuntu-drivers autoinstall` + reboot).
+
+- name: Ensure apt keyrings dir exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Add NVIDIA libnvidia-container GPG key
+  ansible.builtin.get_url:
+    url: https://nvidia.github.io/libnvidia-container/gpgkey
+    dest: /etc/apt/keyrings/nvidia-container-toolkit.asc
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+
+- name: Read NVIDIA GPG fingerprint
+  ansible.builtin.command: gpg --show-keys --with-fingerprint --with-colons /etc/apt/keyrings/nvidia-container-toolkit.asc
+  register: nvidia_container_gpg_show
+  changed_when: false
+
+- name: Assert NVIDIA GPG fingerprint matches the pinned value
+  # Refuse to install if the downloaded key doesn't match — blocks silent MITM
+  # or future compromise of NVIDIA's key hosting.
+  ansible.builtin.assert:
+    that:
+      - nvidia_container_gpg_fingerprint in (nvidia_container_gpg_show.stdout_lines | select('match', '^fpr:') | list | join('\n'))
+    fail_msg: |
+      NVIDIA GPG fingerprint mismatch.
+      Expected: {{ nvidia_container_gpg_fingerprint }}
+      Found:    {{ nvidia_container_gpg_show.stdout_lines | select('match', '^fpr:') | list }}
+      Check https://nvidia.github.io/libnvidia-container/gpgkey and update defaults/main.yml.
+
+- name: Determine apt arch
+  ansible.builtin.set_fact:
+    nvidia_container_apt_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_architecture] | default(ansible_architecture) }}"
+
+- name: Add NVIDIA libnvidia-container apt repository
+  # Flat-style repo (trailing `/`, no suite/component) — the shape NVIDIA's
+  # upstream .list file uses. `arch=` pins to our architecture; `signed-by=`
+  # scopes the keyring so the key can't vouch for other repos.
+  vars:
+    _nvidia_repo_url: "https://nvidia.github.io/libnvidia-container/stable/deb/{{ nvidia_container_apt_arch }}"
+    _nvidia_repo_opts: "arch={{ nvidia_container_apt_arch }} signed-by=/etc/apt/keyrings/nvidia-container-toolkit.asc"
+  ansible.builtin.apt_repository:
+    repo: "deb [{{ _nvidia_repo_opts }}] {{ _nvidia_repo_url }} /"
+    filename: nvidia-container-toolkit
+    state: present
+    update_cache: true
+
+- name: Install nvidia-container-toolkit
+  # Pulls libnvidia-container1, libnvidia-container-tools, nvidia-container-
+  # toolkit-base as transitive deps at matching versions. Version-pin every
+  # co-installed NVIDIA package for reproducibility.
+  ansible.builtin.apt:
+    name:
+      - "nvidia-container-toolkit={{ nvidia_container_toolkit_version }}"
+      - "nvidia-container-toolkit-base={{ nvidia_container_toolkit_version }}"
+      - "libnvidia-container-tools={{ nvidia_container_toolkit_version }}"
+      - "libnvidia-container1={{ nvidia_container_toolkit_version }}"
+    state: present
+
+# The daemon.json runtime block is rendered by the docker role's template
+# (gated on `nvidia_gpu_enabled`). Changing it there notifies `Restart docker`;
+# nothing to do here except verify the runtime is live post-apply.
+- name: Flush handlers so docker restarts before verification
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify nvidia runtime is registered in docker
+  ansible.builtin.command: docker info --format '{{ "{{" }}.Runtimes{{ "}}" }}'
+  register: nvidia_container_docker_runtimes
+  changed_when: false
+
+- name: Assert nvidia runtime is present
+  ansible.builtin.assert:
+    that: "'nvidia' in nvidia_container_docker_runtimes.stdout"
+    fail_msg: |
+      docker info does not list the `nvidia` runtime after apply.
+      Got: {{ nvidia_container_docker_runtimes.stdout }}
+      Check /etc/docker/daemon.json and the docker role's template.

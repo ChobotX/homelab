@@ -1,0 +1,61 @@
+---
+- name: Ensure /opt/ollama layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/ollama
+    - "{{ ollama_models_root }}"
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/ollama/.env
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Swap ollama service
+
+- name: Template docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: /opt/ollama/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap ollama service
+
+- name: Bring up Ollama stack
+  # First-deploy safety net. `recreate: never` leaves running containers
+  # untouched on compose/image changes so the per-service handler owns every
+  # swap (with its --wait gate).
+  community.docker.docker_compose_v2:
+    project_src: /opt/ollama
+    state: present
+    pull: policy
+    recreate: never
+
+- name: Flush handlers so a newly-templated compose is applied before model pull
+  ansible.builtin.meta: flush_handlers
+
+- name: List models already present on this host
+  # Parse `ollama list` output so the pull step is a no-op when the model is
+  # already cached on disk — avoids re-downloading multi-GiB weights on every
+  # converge. First column = model:tag.
+  ansible.builtin.command: docker exec ollama ollama list
+  register: ollama_list
+  changed_when: false
+  failed_when: false
+
+- name: Pull Ollama models
+  # ollama pull is itself idempotent (resumable + skips existing layers), but
+  # gating on the list above means we don't even shell into the container
+  # unless a pull is actually needed.
+  ansible.builtin.command: "docker exec ollama ollama pull {{ item }}"
+  loop: "{{ ollama_models }}"
+  register: ollama_pull
+  changed_when: "'pulling' in ollama_pull.stdout or 'writing' in ollama_pull.stdout"
+  when: item not in (ollama_list.stdout | default(''))

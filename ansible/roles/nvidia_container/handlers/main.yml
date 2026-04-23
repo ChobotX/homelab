@@ -1,0 +1,5 @@
+---
+# No handlers of its own — the daemon.json change lives in the docker role
+# and notifies the `Restart docker` handler there. This file exists so
+# ansible-lint's meta-no-handlers rule doesn't flag the meta/flush_handlers
+# call in tasks.

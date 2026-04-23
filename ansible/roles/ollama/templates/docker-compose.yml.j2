@@ -1,0 +1,47 @@
+---
+# Ollama — local LLM inference.
+# Backend-only on the `proxy` network — no Traefik router, no host ports.
+# Other containers reach it via DNS name `ollama:11434`. Adding a UI (e.g.
+# OpenWebUI) later means adding Traefik labels + wg-only@file gate then.
+services:
+  ollama:
+    image: ${OLLAMA_IMAGE}
+    container_name: ollama
+    restart: unless-stopped
+    # Model eviction + KV-cache flush want a moment before SIGKILL on stop.
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE}
+    volumes:
+      - ${OLLAMA_MODELS_ROOT}:/root/.ollama
+    networks:
+      - proxy
+{% if nvidia_gpu_enabled | default(false) | bool %}
+    # GPU reservation — requires `nvidia` runtime registered in daemon.json
+    # (nvidia_container role handles that). `count: all` grabs every visible
+    # GPU; safe on single-GPU host.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+{% endif %}
+    healthcheck:
+      # /api/tags returns JSON listing loaded models — 200 means the HTTP
+      # server is up even if no model is resident yet.
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  proxy:
+    external: true

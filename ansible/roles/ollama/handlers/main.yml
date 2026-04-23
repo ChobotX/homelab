@@ -1,0 +1,8 @@
+---
+- name: Swap ollama service
+  ansible.builtin.command:
+    chdir: /opt/ollama
+    # --force-recreate so bind-mounted env/compose changes actually trigger
+    # a restart (compose sees no service-spec diff otherwise).
+    cmd: docker compose up -d --wait --no-deps --force-recreate ollama
+  changed_when: true
