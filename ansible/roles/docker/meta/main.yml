@@ -1,0 +1,11 @@
+---
+dependencies: []
+galaxy_info:
+  role_name: docker
+  author: homelab-admin
+  description: Docker Engine + Compose plugin from upstream apt repo
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]

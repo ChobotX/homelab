@@ -1,0 +1,9 @@
+{# Managed by Ansible — renders homepage_bookmarks into Homepage's bookmarks.yaml format. #}
+{% for group in homepage_bookmarks %}
+- {{ group.group }}:
+{% for bm in group['items'] %}
+    - {{ bm.name }}:
+        - abbr: {{ bm.abbr }}
+          href: {{ bm.href }}
+{% endfor %}
+{% endfor %}

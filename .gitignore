@@ -1,0 +1,52 @@
+# Secrets — no secrets should ever end up in this repo.
+# Host-truth and service credentials live in /etc/homelab/ on the homelab box,
+# generated / prompted for by bootstrap.sh. Nothing to commit.
+*.age.txt
+*.age.key
+*_private.key
+*.pem
+
+# Local bootstrap config — mirrors docs/bootstrap.env.example but filled in.
+# Contains tokens, hub IPs, etc. Keep on your laptop + USB, never in git.
+/bootstrap.env
+
+# Mac-side bootstrap prep — generated WG keypair, copy of SFTP key, etc.
+# Ship these files on a USB stick alongside bootstrap.env.
+/.bootstrap-secrets/
+
+# Scratch-paste files from USB / notes — never commit.
+/PAT.txt
+/dns_token.txt
+/wg_pub_key.txt
+/id_ed25519_homelab.pub
+
+# SSH
+id_*
+!*.pub
+
+# Ansible
+*.retry
+ansible/.vault_pass
+ansible/.vault_key
+ansible/host_vars/*/vars.yml
+ansible/host_vars/*/vault.yml
+
+# Local / dev
+.vagrant/
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+venv/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Tool caches
+.ansible/
+.cache/
+
+# Editor / agent local state
+.claude/
+.cursor/

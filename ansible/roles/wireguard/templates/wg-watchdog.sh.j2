@@ -1,0 +1,38 @@
+#!/bin/bash
+# Managed by Ansible — DO NOT EDIT MANUALLY.
+# Restarts wg-quick@wg0 when the hub handshake is stale or wg0 is down.
+# Triggered by wg-watchdog.timer every minute. Logs to journal via `logger`.
+set -u
+
+THRESHOLD={{ wireguard_watchdog_threshold_seconds }}
+LOG_TAG=wg-watchdog
+
+restart() {
+  logger -t "$LOG_TAG" "$1 — restarting wg-quick@wg0"
+  systemctl restart wg-quick@wg0
+}
+
+if ! ip link show wg0 >/dev/null 2>&1; then
+  restart "wg0 interface missing"
+  exit 0
+fi
+
+# Single hub peer — first row of latest-handshakes is enough.
+ts=$(wg show wg0 latest-handshakes 2>/dev/null | awk 'NR==1 {print $2}')
+if [ -z "${ts:-}" ]; then
+  restart "no peer handshake info"
+  exit 0
+fi
+
+if [ "$ts" -eq 0 ]; then
+  restart "no handshake yet (peer endpoint unreachable)"
+  exit 0
+fi
+
+age=$(( $(date +%s) - ts ))
+if [ "$age" -gt "$THRESHOLD" ]; then
+  restart "handshake age ${age}s exceeds ${THRESHOLD}s"
+  exit 0
+fi
+
+exit 0

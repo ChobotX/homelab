@@ -1,0 +1,81 @@
+# Managed by Ansible — Traefik v3 static config.
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+log:
+  level: INFO
+
+accessLog:
+  format: json
+  filePath: /var/log/traefik/access.log
+  fields:
+    defaultMode: keep
+    headers:
+      defaultMode: drop
+      names:
+        X-Request-Id: keep
+        User-Agent: keep
+
+api:
+  dashboard: true
+  insecure: false
+
+# Healthcheck endpoint — internal only, used by the container healthcheck.
+ping:
+  entryPoint: ping
+
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addRoutersLabels: true
+    addServicesLabels: true
+
+tracing:
+  otlp:
+    http:
+      endpoint: http://tempo:4318/v1/traces
+  serviceName: traefik
+  sampleRate: 1.0
+
+entryPoints:
+  ping:
+    address: ":8082"
+  metrics:
+    address: ":8083"
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: {{ traefik_cert_resolver }}
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: proxy
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+certificatesResolvers:
+  cloudflare:
+    acme:
+      email: {{ acme_email }}
+      storage: /letsencrypt/acme.json
+      # Production CA — comment out caServer to use LE prod (default).
+      # caServer: https://acme-staging-v02.api.letsencrypt.org/directory
+      dnsChallenge:
+        provider: cloudflare
+        resolvers:
+          - "1.1.1.1:53"
+          - "1.0.0.1:53"
+        # propagation timeout handled by Traefik defaults

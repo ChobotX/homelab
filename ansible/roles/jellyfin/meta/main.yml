@@ -1,0 +1,12 @@
+---
+dependencies:
+  - role: traefik
+galaxy_info:
+  role_name: jellyfin
+  author: homelab-admin
+  description: Jellyfin media server (behind Traefik, WG-only)
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]

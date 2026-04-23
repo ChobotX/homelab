@@ -1,0 +1,92 @@
+---
+- name: Install ufw
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+# Apply in a block so default-deny never lands before the SSH allow rule.
+# Order inside: allow rules first, THEN default-deny, THEN enable.
+- name: Apply firewall policy (lockout-safe ordering)
+  block:
+    - name: Allow from WG subnet
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        proto: "{{ item.proto | default('tcp') }}"
+        src: "{{ wireguard_subnet }}"
+        comment: "{{ item.name }}-from-wg"
+      loop:
+        - { name: ssh, port: "22" }
+        - { name: http, port: "80" }
+        - { name: https, port: "443" }
+        # Syncthing BEP sync protocol. tcp + QUIC (udp), both WG-only.
+        # Container binds these ports on the WG IP explicitly (no 0.0.0.0),
+        # but UFW still has to allow them through the host firewall.
+        - { name: syncthing-tcp, port: "22000", proto: "tcp" }
+        - { name: syncthing-udp, port: "22000", proto: "udp" }
+
+    - name: Allow nvidia_gpu_exporter from Docker bridge networks
+      # Exporter binds 0.0.0.0:9835 on host so Prometheus (in the observability
+      # bridge network) can reach it via host-gateway. Allow from all standard
+      # Docker private ranges — existing bridges pre-date daemon.json's
+      # default-address-pools so they sit in 172.16.0.0/12, not 10.200.0.0/16.
+      when: nvidia_gpu_enabled | default(false) | bool
+      community.general.ufw:
+        rule: allow
+        port: "9835"
+        proto: tcp
+        src: "{{ item }}"
+        comment: "nvidia-gpu-exporter-from-docker"
+      loop:
+        - "172.16.0.0/12"
+        - "10.200.0.0/16"
+
+    - name: Allow host node_exporter from Docker bridge networks
+      # Same pattern as nvidia_gpu_exporter — binds 0.0.0.0:9100 on host,
+      # Prometheus reaches it via host-gateway over the observability bridge.
+      community.general.ufw:
+        rule: allow
+        port: "9100"
+        proto: tcp
+        src: "{{ item }}"
+        comment: "node-exporter-from-docker"
+      loop:
+        - "172.16.0.0/12"
+        - "10.200.0.0/16"
+
+    - name: Default outgoing allow
+      community.general.ufw:
+        direction: outgoing
+        policy: allow
+
+    - name: Default incoming deny
+      community.general.ufw:
+        direction: incoming
+        policy: deny
+
+    - name: Default routed deny
+      community.general.ufw:
+        direction: routed
+        policy: deny
+
+    - name: Enable + persist ufw
+      community.general.ufw:
+        state: enabled
+        logging: "{{ ufw_logging }}"
+
+- name: Assert SSH from WG is actually in the ruleset
+  # Belt-and-suspenders: if the allow rule was removed by mistake, refuse to
+  # leave the box in a deny-all state. Skipped inside containers because
+  # netfilter is typically unavailable / faked there.
+  when: ansible_virtualization_type not in ['docker', 'lxc', 'container']
+  block:
+    - name: Dump current ufw rules
+      ansible.builtin.command: ufw status numbered
+      register: ufw_status
+      changed_when: false
+
+    - name: Fail if SSH allow-from-WG rule is missing
+      ansible.builtin.assert:
+        that:
+          - ufw_status.stdout is search('22/tcp.*ALLOW IN.*' + (wireguard_subnet | regex_escape))
+        fail_msg: "UFW is active but has no ALLOW rule for SSH from {{ wireguard_subnet }} — would lock you out."

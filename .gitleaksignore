@@ -1,0 +1,4 @@
+# Fingerprints gitleaks should skip. One per line:
+#   <commit_sha>:<path>:<rule_id>:<line>
+#
+# Each entry needs a short reason in a trailing comment.

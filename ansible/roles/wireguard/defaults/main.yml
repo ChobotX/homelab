@@ -1,0 +1,9 @@
+---
+wireguard_mtu: 1420
+wireguard_peer_name: upstream_hub
+wireguard_peer_keepalive: 25
+
+# Watchdog: restart wg-quick@wg0 if hub handshake older than this (seconds).
+# 180s = ~3× keepalive (25s) + slack — long enough to ride out transient
+# packet loss, short enough to recover before SSH-only access feels broken.
+wireguard_watchdog_threshold_seconds: 180

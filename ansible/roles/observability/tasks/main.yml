@@ -1,0 +1,419 @@
+---
+- name: Ensure /opt/observability layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/observability
+    - /opt/observability/data
+    - /opt/observability/data/alloy
+    - /opt/observability/grafana
+    - /opt/observability/grafana/provisioning
+    - /opt/observability/grafana/provisioning/datasources
+    - /opt/observability/grafana/provisioning/dashboards
+    # Grafana 11.3 scans these unconditionally on boot. Without the dirs
+    # it logs "Failed to read provisioning files" errors. Empty is fine.
+    - /opt/observability/grafana/provisioning/alerting
+    - /opt/observability/grafana/provisioning/plugins
+    - /opt/observability/grafana/dashboards
+    - /opt/observability/data/ntfy
+    - /opt/observability/data/ntfy/cache
+    - /opt/observability/data/ntfy/lib
+
+- name: Ensure Grafana data dir (owned by Grafana UID)
+  ansible.builtin.file:
+    path: /opt/observability/data/grafana
+    state: directory
+    owner: "{{ observability_grafana_uid }}"
+    group: "{{ observability_grafana_gid }}"
+    mode: "0755"
+
+- name: Ensure Prometheus data dir (owned by nobody/nogroup)
+  ansible.builtin.file:
+    path: /opt/observability/data/prometheus
+    state: directory
+    owner: "{{ observability_prometheus_uid }}"
+    group: "{{ observability_prometheus_gid }}"
+    mode: "0755"
+
+- name: Ensure Loki data dir (owned by loki UID)
+  ansible.builtin.file:
+    path: /opt/observability/data/loki
+    state: directory
+    owner: "{{ observability_loki_uid }}"
+    group: "{{ observability_loki_gid }}"
+    mode: "0755"
+
+- name: Ensure Tempo data dir (owned by tempo UID)
+  ansible.builtin.file:
+    path: /opt/observability/data/tempo
+    state: directory
+    owner: "{{ observability_tempo_uid }}"
+    group: "{{ observability_tempo_gid }}"
+    mode: "0755"
+
+- name: Ensure Alertmanager data dir (owned by nobody UID)
+  # AM runs as uid 65534 in prom/alertmanager and writes nflog maintenance
+  # files — root-owned dir => "permission denied" every 15m. recurse heals
+  # any pre-existing files created before this task existed.
+  ansible.builtin.file:
+    path: /opt/observability/data/alertmanager
+    state: directory
+    owner: "{{ observability_alertmanager_uid }}"
+    group: "{{ observability_alertmanager_gid }}"
+    mode: "0755"
+    recurse: true
+
+# The `observability` and `proxy` docker networks are created in the `docker`
+# role (end of infra phase) so this role can run in parallel with
+# traefik/vaultwarden/homepage without racing on idempotent-but-split creation.
+# Both networks are declared `external: true` in the compose files that use
+# them, so they must exist before any of those compose stacks come up.
+
+# Kick off the two exporter tarball downloads asynchronously so they overlap
+# with the ~20s of template-rendering / copy / systemd-unit work below. The
+# matching `async_status` wait tasks live inside each exporter's install block
+# (see "Host node_exporter" and "NVIDIA GPU exporter" later in this file) and
+# run before the respective `unarchive` tasks that consume the tarballs.
+# On subsequent runs get_url short-circuits on the sha256 checksum match, so
+# the async kickoff completes in <1s — the overhead is negligible in either
+# cache state.
+- name: Kick off node_exporter download (async)
+  vars:
+    _v: "{{ observability_node_exporter_version }}"
+    _base: "https://github.com/prometheus/node_exporter/releases/download"
+  ansible.builtin.get_url:
+    url: "{{ _base }}/v{{ _v }}/node_exporter-{{ _v }}.linux-amd64.tar.gz"
+    dest: "/tmp/node_exporter-{{ _v }}.tar.gz"
+    checksum: "sha256:{{ observability_node_exporter_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  async: 300
+  poll: 0
+  register: observability_node_exporter_dl
+
+- name: Kick off nvidia_gpu_exporter download (async)
+  when: nvidia_gpu_enabled | default(false) | bool
+  tags: [gpu]
+  vars:
+    _v: "{{ observability_nvidia_exporter_version }}"
+    _base: "https://github.com/utkuozdemir/nvidia_gpu_exporter/releases/download"
+  ansible.builtin.get_url:
+    url: "{{ _base }}/v{{ _v }}/nvidia_gpu_exporter_{{ _v }}_linux_x86_64.tar.gz"
+    dest: "/tmp/nvidia_gpu_exporter_{{ _v }}.tar.gz"
+    checksum: "sha256:{{ observability_nvidia_exporter_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  async: 300
+  poll: 0
+  register: observability_nvidia_gpu_dl
+
+- name: Template .env
+  # Shared across all services — any variable in here may have changed, so
+  # every service handler is notified. Handlers dedup per play so this is
+  # still one swap per service, not N.
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/observability/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify:
+    - Swap grafana service
+    - Swap prometheus service
+    - Swap loki service
+    - Swap tempo service
+    - Swap alloy service
+    - Rollout alertmanager
+    - Swap blackbox_exporter service
+    - Rollout ntfy
+    - Swap ntfy_alertmanager service
+
+- name: Template Prometheus config
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /opt/observability/prometheus.yml
+    owner: root
+    group: root
+    mode: "0644"
+  no_log: true
+  notify: Swap prometheus service
+
+- name: Deploy Prometheus alert rules
+  ansible.builtin.copy:
+    src: alert-rules.yml
+    dest: /opt/observability/alert-rules.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap prometheus service
+
+- name: Deploy blackbox_exporter config
+  ansible.builtin.copy:
+    src: blackbox.yml
+    dest: /opt/observability/blackbox.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap blackbox_exporter service
+
+# Per-container state metrics (running/health/restart count) as a systemd-timed
+# textfile producer. Alloy's node_exporter textfile collector already watches
+# /var/lib/node_exporter/textfile (see alloy-config.alloy.j2), so no scrape
+# job or new service is needed — metrics auto-flow with `job="node"`.
+
+- name: Ensure node_exporter textfile collector directory
+  ansible.builtin.file:
+    path: /var/lib/node_exporter/textfile
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy docker-state exporter script
+  ansible.builtin.copy:
+    src: docker-state-exporter.sh
+    dest: /usr/local/sbin/docker-state-exporter.sh
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Deploy docker-state exporter systemd service unit
+  ansible.builtin.copy:
+    src: docker-state-exporter.service
+    dest: /etc/systemd/system/docker-state-exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Deploy docker-state exporter systemd timer unit
+  ansible.builtin.copy:
+    src: docker-state-exporter.timer
+    dest: /etc/systemd/system/docker-state-exporter.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start docker-state exporter timer
+  ansible.builtin.systemd:
+    name: docker-state-exporter.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+
+# NVIDIA GPU metrics — utkuozdemir/nvidia_gpu_exporter wraps `nvidia-smi` and
+# exposes Prometheus metrics on :9835. Binary install (systemd), not a compose
+# service — exporter needs direct access to /usr/bin/nvidia-smi and /dev/nvidia*
+# on the host. Driver itself is a one-shot host-specific setup (not IaC).
+- name: NVIDIA GPU exporter
+  when: nvidia_gpu_enabled | default(false) | bool
+  tags: [gpu]
+  block:
+    - name: Wait for nvidia_gpu_exporter download
+      ansible.builtin.async_status:
+        jid: "{{ observability_nvidia_gpu_dl.ansible_job_id }}"
+      register: observability_nvidia_gpu_dl_result
+      until: observability_nvidia_gpu_dl_result.finished
+      retries: 60
+      delay: 2
+
+    - name: Extract nvidia_gpu_exporter binary
+      ansible.builtin.unarchive:
+        src: "/tmp/nvidia_gpu_exporter_{{ observability_nvidia_exporter_version }}.tar.gz"
+        dest: /usr/local/sbin
+        include: ["nvidia_gpu_exporter"]
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+      notify: Restart nvidia-gpu-exporter
+
+    - name: Deploy nvidia-gpu-exporter systemd unit
+      ansible.builtin.copy:
+        src: nvidia-gpu-exporter.service
+        dest: /etc/systemd/system/nvidia-gpu-exporter.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart nvidia-gpu-exporter
+
+    - name: Enable and start nvidia-gpu-exporter
+      ansible.builtin.systemd:
+        name: nvidia-gpu-exporter.service
+        state: started
+        enabled: true
+        daemon_reload: true
+
+# Host node_exporter — see defaults/main.yml for rationale. Owns cpu/mem/disk/
+# netdev/hwmon/rapl/textfile metrics. Alloy keeps cadvisor + logs only.
+- name: Host node_exporter
+  block:
+    - name: Wait for node_exporter download
+      ansible.builtin.async_status:
+        jid: "{{ observability_node_exporter_dl.ansible_job_id }}"
+      register: observability_node_exporter_dl_result
+      until: observability_node_exporter_dl_result.finished
+      retries: 60
+      delay: 2
+
+    - name: Extract node_exporter binary
+      ansible.builtin.unarchive:
+        src: "/tmp/node_exporter-{{ observability_node_exporter_version }}.tar.gz"
+        dest: /usr/local/sbin
+        include:
+          - "node_exporter-{{ observability_node_exporter_version }}.linux-amd64/node_exporter"
+        extra_opts:
+          - --strip-components=1
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+      notify: Restart node-exporter
+
+    - name: Deploy node-exporter systemd unit
+      ansible.builtin.copy:
+        src: node-exporter.service
+        dest: /etc/systemd/system/node-exporter.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart node-exporter
+
+    - name: Enable and start node-exporter
+      ansible.builtin.systemd:
+        name: node-exporter.service
+        state: started
+        enabled: true
+        daemon_reload: true
+
+- name: Deploy Loki config
+  ansible.builtin.copy:
+    src: loki-config.yml
+    dest: /opt/observability/loki-config.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap loki service
+
+- name: Deploy Tempo config
+  ansible.builtin.copy:
+    src: tempo-config.yml
+    dest: /opt/observability/tempo-config.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap tempo service
+
+- name: Template Alertmanager config
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: /opt/observability/alertmanager.yml
+    owner: root
+    group: root
+    mode: "0644"
+  no_log: true
+  notify: Rollout alertmanager
+
+- name: Template ntfy server config
+  ansible.builtin.template:
+    src: ntfy-server.yml.j2
+    dest: /opt/observability/ntfy-server.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Rollout ntfy
+
+- name: Template ntfy-alertmanager bridge config
+  ansible.builtin.template:
+    src: ntfy-alertmanager.scfg.j2
+    dest: /opt/observability/ntfy-alertmanager.scfg
+    owner: root
+    group: root
+    mode: "0644"
+  no_log: true
+  notify: Swap ntfy_alertmanager service
+
+- name: Template Alloy config
+  ansible.builtin.template:
+    src: alloy-config.alloy.j2
+    dest: /opt/observability/alloy-config.alloy
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap alloy service
+
+- name: Template Grafana datasources provisioning
+  ansible.builtin.template:
+    src: grafana-datasources.yml.j2
+    dest: /opt/observability/grafana/provisioning/datasources/datasources.yml
+    owner: root
+    group: "{{ observability_grafana_gid }}"
+    mode: "0640"
+  notify: Swap grafana service
+
+- name: Template Grafana dashboards provisioning
+  # Provider config itself — path, folder, intervals — requires a grafana
+  # restart to take effect (file-provider scan is read once on boot).
+  ansible.builtin.template:
+    src: grafana-dashboards.yml.j2
+    dest: /opt/observability/grafana/provisioning/dashboards/dashboards.yml
+    owner: root
+    group: "{{ observability_grafana_gid }}"
+    mode: "0640"
+  notify: Swap grafana service
+
+- name: Sync dashboard JSONs
+  # No notify — Grafana's file provider auto-reloads JSON changes every
+  # updateIntervalSeconds (30s). A container swap would be pure overhead.
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: /opt/observability/grafana/dashboards/
+    owner: root
+    group: "{{ observability_grafana_gid }}"
+    mode: "0640"
+  with_fileglob:
+    - "dashboards/*.json"
+
+- name: Deploy docker-compose.yml
+  # Compose-file change can affect any service (network, volume, labels,
+  # image bumps landed via defaults) — notify every handler.
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/observability/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Swap grafana service
+    - Swap prometheus service
+    - Swap loki service
+    - Swap tempo service
+    - Swap alloy service
+    - Rollout alertmanager
+    - Swap blackbox_exporter service
+    - Rollout ntfy
+    - Swap ntfy_alertmanager service
+
+- name: Bring up observability stack
+  # First-deploy safety net — creates any service not yet running. Image
+  # pulls happen here, but `recreate: never` stops this task from tearing
+  # down running containers when the compose file changes. That recreate
+  # path belongs to the per-service handlers above, so the --wait gate is
+  # what actually performs every swap.
+  community.docker.docker_compose_v2:
+    project_src: /opt/observability
+    state: present
+    pull: policy
+    recreate: never

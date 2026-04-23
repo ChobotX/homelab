@@ -1,0 +1,284 @@
+---
+- name: Install restic
+  ansible.builtin.apt:
+    name: restic
+    state: present
+
+- name: Ensure /etc/restic directory
+  ansible.builtin.file:
+    path: /etc/restic
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Ensure restic cache directory (referenced via XDG_CACHE_HOME in service unit)
+  ansible.builtin.file:
+    path: /var/cache/restic
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Ensure node_exporter textfile collector directory
+  ansible.builtin.file:
+    path: /var/lib/node_exporter/textfile
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy restic environment file (repo URL + credentials + password)
+  ansible.builtin.template:
+    src: restic.env.j2
+    dest: /etc/restic/restic.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+# Compute once: is SFTP the backend? If repo URL starts with `sftp:` AND we have
+# a host/user, lay down the SSH key + known_hosts + ssh_config block. Otherwise
+# remove them so switching backends doesn't leave stale credentials behind.
+- name: Decide SFTP state
+  ansible.builtin.set_fact:
+    backup_uses_sftp: >-
+      {{
+        (restic_repo_url | default('')).startswith('sftp:') and
+        (restic_sftp_host | default('') | length > 0) and
+        (restic_sftp_user | default('') | length > 0) and
+        (restic_sftp_private_key | default('') | length > 0)
+      }}
+
+- name: Ensure root's ssh dir exists
+  ansible.builtin.file:
+    path: /root/.ssh
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: backup_uses_sftp
+
+- name: Manage SFTP private key
+  ansible.builtin.copy:
+    dest: /root/.ssh/homelab_sb_id_ed25519
+    # OpenSSH rejects keys without a trailing newline ("error in libcrypto");
+    # site.yml's .strip() on slurped secrets drops it, so re-add it here.
+    content: "{{ restic_sftp_private_key }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: backup_uses_sftp
+
+- name: Remove SFTP private key when SFTP is not the backend
+  ansible.builtin.file:
+    path: /root/.ssh/homelab_sb_id_ed25519
+    state: absent
+  when: not backup_uses_sftp
+
+- name: Storage Box reachability — keyscan, known_hosts, metric
+  # Must target the real SFTP port (23). Port 22 exposes different host keys,
+  # and a known_hosts entry keyed to `[host]:22` won't match an ssh connection
+  # to `[host]:23` → StrictHostKeyChecking fails silently inside the HA
+  # freshness exporter and the gauge collapses to 0.
+  #
+  # Hetzner Storage Box has occasional maintenance windows where keyscan
+  # returns empty/rc=1. Retrying survives brief hiccups; a rescue branch
+  # keeps existing known_hosts (Hetzner rarely rotates keys) and publishes
+  # a textfile metric so StorageBoxUnreachable fires instead of the whole
+  # playbook failing + killing deferred service-swap handlers.
+  when: backup_uses_sftp
+  block:
+    - name: Scan SFTP host keys (computes known_hosts on the fly)
+      ansible.builtin.command:
+        argv:
+          - ssh-keyscan
+          - -p
+          - "{{ backup_sftp_port | string }}"
+          - -t
+          - ed25519,rsa
+          - "{{ restic_sftp_host }}"
+      register: backup_ssh_keyscan
+      changed_when: false
+      retries: 5
+      delay: 15
+      until: backup_ssh_keyscan.rc == 0 and (backup_ssh_keyscan.stdout | length) > 0
+
+    - name: Manage SFTP known_hosts
+      ansible.builtin.copy:
+        dest: /root/.ssh/known_hosts_sb
+        content: "{{ backup_ssh_keyscan.stdout }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Record Storage Box reachable
+      ansible.builtin.set_fact:
+        backup_sftp_reachable: 1
+  rescue:
+    - name: Record Storage Box unreachable — keep existing known_hosts
+      ansible.builtin.set_fact:
+        backup_sftp_reachable: 0
+
+    - name: Warn (non-fatal) about Storage Box reachability
+      ansible.builtin.debug:
+        msg: >-
+          Storage Box SFTP unreachable after retries — continuing with
+          existing /root/.ssh/known_hosts_sb. StorageBoxUnreachable alert
+          will fire if this persists >30m.
+  always:
+    - name: Publish storagebox_sftp_reachable textfile metric
+      ansible.builtin.copy:
+        dest: /var/lib/node_exporter/textfile/storagebox_sftp.prom
+        content: |
+          # HELP storagebox_sftp_reachable ssh-keyscan to Storage Box on last ansible run (1=ok, 0=fail).
+          # TYPE storagebox_sftp_reachable gauge
+          storagebox_sftp_reachable{host="{{ restic_sftp_host }}",port="{{ backup_sftp_port | string }}"} {{ backup_sftp_reachable }}
+        owner: root
+        group: root
+        mode: "0644"
+
+- name: Remove SFTP known_hosts when SFTP is not the backend
+  ansible.builtin.file:
+    path: /root/.ssh/known_hosts_sb
+    state: absent
+  when: not backup_uses_sftp
+
+- name: Remove storagebox reachability metric when SFTP is not the backend
+  ansible.builtin.file:
+    path: /var/lib/node_exporter/textfile/storagebox_sftp.prom
+    state: absent
+  when: not backup_uses_sftp
+
+- name: Manage ssh_config host block for Storage Box
+  ansible.builtin.blockinfile:
+    path: /root/.ssh/config
+    create: true
+    owner: root
+    group: root
+    mode: "0600"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK: restic storage box"
+    state: "{{ 'present' if backup_uses_sftp else 'absent' }}"
+    block: |
+      Host {{ restic_sftp_host | default('') }}
+        User {{ restic_sftp_user | default('') }}
+        Port {{ backup_sftp_port }}
+        IdentityFile /root/.ssh/homelab_sb_id_ed25519
+        IdentitiesOnly yes
+        UserKnownHostsFile /root/.ssh/known_hosts_sb
+        StrictHostKeyChecking yes
+
+- name: Deploy exclude list
+  ansible.builtin.template:
+    src: excludes.j2
+    dest: /etc/restic/excludes.txt
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Deploy backup script
+  ansible.builtin.template:
+    src: restic-backup.sh.j2
+    dest: /usr/local/sbin/restic-backup.sh
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Initialize restic repo (idempotent)
+  # Skip when SFTP backend is currently unreachable — `restic snapshots`
+  # would hit a dead TCP port and fail the play. Existing repo stays
+  # initialized; next converge will retry once Storage Box is back.
+  when:
+    - restic_password | length > 0
+    - backup_sftp_reachable | default(1) == 1
+  ansible.builtin.shell: |
+    set -a
+    . /etc/restic/restic.env
+    set +a
+    if ! restic snapshots >/dev/null 2>&1; then
+      restic init
+    fi
+  args:
+    executable: /bin/bash
+  register: backup_restic_init
+  changed_when: "'created restic repository' in (backup_restic_init.stdout | default(''))"
+
+- name: Deploy systemd service unit
+  ansible.builtin.template:
+    src: restic-backup.service.j2
+    dest: /etc/systemd/system/restic-backup.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Deploy systemd timer unit
+  ansible.builtin.template:
+    src: restic-backup.timer.j2
+    dest: /etc/systemd/system/restic-backup.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start the backup timer
+  ansible.builtin.systemd:
+    name: restic-backup.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+
+# --- Home Assistant backup freshness exporter ----------------------------------
+# Polls the Storage Box over SSH (reuses the existing key), stats the newest
+# HA .tar and publishes the mtime as a node_exporter textfile gauge.
+# Required because HA writes its backups via CIFS outside the restic repo, so
+# the existing restic_last_backup_timestamp_seconds doesn't cover them.
+
+- name: Deploy HA backup freshness script
+  ansible.builtin.template:
+    src: ha-backup-freshness.sh.j2
+    dest: /usr/local/sbin/ha-backup-freshness.sh
+    owner: root
+    group: root
+    mode: "0750"
+  when: backup_ha_monitor_enabled and backup_uses_sftp
+
+- name: Deploy HA backup freshness service unit
+  ansible.builtin.template:
+    src: ha-backup-freshness.service.j2
+    dest: /etc/systemd/system/ha-backup-freshness.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: backup_ha_monitor_enabled and backup_uses_sftp
+  notify: Reload systemd
+
+- name: Deploy HA backup freshness timer unit
+  ansible.builtin.template:
+    src: ha-backup-freshness.timer.j2
+    dest: /etc/systemd/system/ha-backup-freshness.timer
+    owner: root
+    group: root
+    mode: "0644"
+  when: backup_ha_monitor_enabled and backup_uses_sftp
+  notify: Reload systemd
+
+- name: Enable and start the HA backup freshness timer
+  ansible.builtin.systemd:
+    name: ha-backup-freshness.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: backup_ha_monitor_enabled and backup_uses_sftp
+
+- name: Remove HA backup freshness units when monitor disabled
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/local/sbin/ha-backup-freshness.sh
+    - /etc/systemd/system/ha-backup-freshness.service
+    - /etc/systemd/system/ha-backup-freshness.timer
+  when: not (backup_ha_monitor_enabled and backup_uses_sftp)
+  notify: Reload systemd

@@ -1,0 +1,55 @@
+---
+# Homepage — static signpost for homelab services.
+# Joined to `observability` so widgets reach grafana/alertmanager/prometheus
+# by service name. `proxy` provides Traefik ingress + traefik:8080 API.
+services:
+  homepage:
+    image: ${HOMEPAGE_IMAGE}
+    container_name: homepage
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # NET_RAW lets Homepage's `ping:` widget open ICMP sockets (iputils-ping
+    # in the image). All other caps stay dropped.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+    env_file:
+      - .env
+    environment:
+      HOMEPAGE_ALLOWED_HOSTS: ${HOMEPAGE_HOST}
+    # Config mount is RW because docker-entrypoint.sh creates /app/config/logs
+    # and runs chown. `read_only: true` + `:ro` mount breaks startup chain —
+    # Homepage isn't hardened for that profile, unlike Vaultwarden/Grafana.
+    volumes:
+      - ./config:/app/config
+    networks:
+      - proxy
+      - observability
+    # Inherit the image's built-in HEALTHCHECK (hits /api/healthcheck with a
+    # 20s start_period) — overriding with our own tripped a race where Next.js
+    # wasn't ready in 90s on first boot.
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+      traefik.http.routers.homepage.rule: "Host(`${HOMEPAGE_HOST}`)"
+      traefik.http.routers.homepage.entrypoints: "websecure"
+      traefik.http.routers.homepage.tls: "true"
+      traefik.http.routers.homepage.tls.certresolver: "cloudflare"
+      traefik.http.routers.homepage.service: "homepage"
+      traefik.http.routers.homepage.middlewares: "wg-only@file,security-headers@file"
+      traefik.http.services.homepage.loadbalancer.server.port: "3000"
+      traefik.http.services.homepage.loadbalancer.healthcheck.path: "/api/healthcheck"
+      traefik.http.services.homepage.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.homepage.loadbalancer.healthcheck.timeout: "2s"
+      # Homepage v1 validates the Host header against HOMEPAGE_ALLOWED_HOSTS
+      # and rejects requests whose Host is the backend IP. Send the public
+      # hostname on the LB healthcheck so it passes validation.
+      traefik.http.services.homepage.loadbalancer.healthcheck.hostname: "${HOMEPAGE_HOST}"
+
+networks:
+  proxy:
+    external: true
+  observability:
+    external: true

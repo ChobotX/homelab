@@ -1,0 +1,13 @@
+---
+- name: Reload wg0
+  # Hot-reload peer config without dropping the interface. Survives `ansible-playbook`
+  # run over this same tunnel — a full `systemctl restart` would kill the SSH session.
+  # Interface-level changes (Address, ListenPort, MTU) still require a real restart;
+  # do that manually when needed.
+  # changed_when:false — `wg syncconf` has no stable exit signal to distinguish
+  # "applied config" from "nothing to do"; the notify gate already guarantees
+  # this only fires when wg0.conf actually changed.
+  ansible.builtin.shell: wg syncconf wg0 <(wg-quick strip wg0)
+  args:
+    executable: /bin/bash
+  changed_when: false

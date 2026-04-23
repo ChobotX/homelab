@@ -1,0 +1,6 @@
+---
+syncthing_image: "syncthing/syncthing:2.0.16@sha256:dc80aea826fe71d9da24b36772535a25010b74ee0eee3bcd39a9ff2ac5bb03b5"
+syncthing_host: "syncthing.{{ homelab_domain }}"
+# Media incoming bucket. Syncthing writes here; jellyfin mounts /opt/media
+# read-only so this subtree is visible on the streaming side too.
+syncthing_sync_root: /opt/media/incoming

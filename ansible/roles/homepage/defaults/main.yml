@@ -1,0 +1,92 @@
+---
+homepage_image: "ghcr.io/gethomepage/homepage:v1.12.3@sha256:cc84f2f5eb3c7734353701ccbaa24ed02dacb0d119114e50e4251e2005f3990a"
+homepage_host: "home.{{ homelab_domain }}"
+homepage_title: "Homelab"
+homepage_header_style: clean
+
+# Per-service links for the signpost page. Live widgets reuse existing internal
+# service endpoints (observability network DNS). siteMonitor fields add a
+# green/red status dot + response time per tile — Homepage's built-in
+# per-service health indicator; no extra probes required.
+#
+# Extra per-instance groups (external PaaS, uptime pages, etc.) live in
+# homepage_services_extra in /etc/homelab/config.yml — keeps real URLs out
+# of git. The two lists are concatenated at template time.
+homepage_services:
+  - group: Homelab
+    items:
+      - name: Grafana
+        href: "https://grafana.{{ homelab_domain }}"
+        icon: grafana.svg
+        description: Dashboards, logs, traces
+        siteMonitor: "http://grafana:3000/api/health"
+        widget:
+          type: grafana
+          url: "http://grafana:3000"
+          username: admin
+          # Literal `{{HOMEPAGE_VAR_GRAFANA_PASSWORD}}` — Homepage substitutes
+          # at runtime from the HOMEPAGE_VAR_GRAFANA_PASSWORD env var (set in
+          # .env from grafana_admin_password). `!unsafe` keeps Ansible's Jinja
+          # pass from trying to resolve it. Homepage expects the braces to be
+          # tight (no inner spaces) so we keep it that way even though
+          # ansible-lint's jinja[spacing] would prefer spaces here.
+          password: !unsafe "{{HOMEPAGE_VAR_GRAFANA_PASSWORD}}"  # noqa: jinja[spacing]
+      - name: Alertmanager
+        href: "https://alertmanager.{{ homelab_domain }}"
+        icon: prometheus.svg
+        description: Alert routing
+        siteMonitor: "http://alertmanager:9093/-/ready"
+        widget:
+          type: alertmanager
+          url: "http://alertmanager:9093"
+      - name: Traefik
+        href: "https://{{ traefik_dashboard_host }}"
+        icon: traefik.svg
+        description: Reverse proxy
+        # Traefik API requires basic-auth (dashboard-auth@file). Skip the
+        # widget and keep siteMonitor for the green/red status dot.
+        siteMonitor: "http://traefik:8082/ping"
+      - name: Vaultwarden
+        href: "https://{{ vaultwarden_host }}"
+        icon: vaultwarden.svg
+        description: Password vault
+        siteMonitor: "http://vaultwarden:80/alive"
+      - name: Home Assistant
+        href: "https://{{ traefik_homeassistant_host }}"
+        icon: home-assistant.svg
+        description: Smart-home hub (HAOS)
+        siteMonitor: "http://{{ homeassistant_host | default('') }}"
+        # Reuses homeassistant_metrics_token (already a long-lived access
+        # token used for Prometheus scraping — HA LLATs are user-scoped,
+        # not endpoint-scoped, so the same token fits the widget API).
+        widget:
+          type: homeassistant
+          url: "http://{{ homeassistant_host | default('') }}"
+          key: !unsafe "{{HOMEPAGE_VAR_HA_TOKEN}}"  # noqa: jinja[spacing]
+          fields: "[\"people_home\", \"lights_on\", \"switches_on\"]"
+  - group: Media
+    items:
+      - name: Jellyfin
+        href: "https://{{ jellyfin_host }}"
+        icon: jellyfin.svg
+        description: Media streaming
+        # Health endpoint is unauth'd; dot goes green when the container is up
+        # and Traefik is routing. Live widget needs an API key from Jellyfin's
+        # first-run wizard — deferred (plumb via HOMEPAGE_VAR_JELLYFIN_KEY once
+        # registered).
+        siteMonitor: "http://jellyfin:8096/health"
+      - name: Syncthing
+        href: "https://{{ syncthing_host }}"
+        icon: syncthing.svg
+        description: Media upload & sync
+        siteMonitor: "http://syncthing:8384/rest/noauth/health"
+# Per-instance additions (external PaaS, uptime pages, WG hub). Set in
+# /etc/homelab/config.yml; defaults to empty so no real URLs ship in git.
+homepage_services_extra: []
+
+# Extra top-of-page info widgets. Alertmanager is a SERVICE widget only
+# (no info-widget variant), so it lives on the tile above, not here.
+homepage_widgets_extra: []
+
+# Optional bookmark groups. Override in /etc/homelab/config.yml.
+homepage_bookmarks: []

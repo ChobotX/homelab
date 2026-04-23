@@ -1,0 +1,42 @@
+---
+# Managed by Ansible. ntfy self-hosted push server.
+#
+# Perimeter model: Traefik wraps ntfy with `wg-only` middleware, so the only
+# clients that ever reach it are already on the WireGuard network. That lets
+# us keep the topic anonymous (no bcrypt dance, no token provisioning) — the
+# bridge publishes without auth, phones subscribe without auth, and access
+# to everything else on the server is denied by default.
+
+base-url: "https://{{ observability_ntfy_host }}"
+listen-http: ":80"
+behind-proxy: true
+
+# User DB persists future accounts if we ever need per-user ACLs. Sqlite file.
+auth-file: "/var/lib/ntfy/user.db"
+
+# Deny everything by default; open just the topics below.
+auth-default-access: "deny-all"
+auth-access:
+  - "*:{{ observability_ntfy_topic }}:rw"
+  - "*:{{ observability_ntfy_deploy_topic }}:rw"
+
+# Message cache — short retention is fine; notifications are transient.
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "12h"
+
+# Keep attachments off the disk — alerts are short text blobs.
+attachment-cache-dir: ""
+
+# Disable the sign-up form and the web-push subscription endpoint — neither
+# is useful here and both widen surface area.
+enable-signup: false
+enable-login: true
+enable-reservations: false
+
+{% if observability_ntfy_upstream_base_url %}
+# iOS push relay — see comment in defaults/main.yml for the full rationale.
+# Without this, the iOS ntfy app falls back to manual-poll-only delivery
+# (no background notifications). With it, ntfy.sh acts as APNs broker:
+# topic name + arrival time leak; message body stays on this server.
+upstream-base-url: "{{ observability_ntfy_upstream_base_url }}"
+{% endif %}

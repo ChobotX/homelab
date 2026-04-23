@@ -1,0 +1,20 @@
+{# Managed by Ansible — top-of-page info widgets. #}
+- logo:
+    icon: mdi-home-automation
+- greeting:
+    text_size: xl
+    text: "{{ homepage_title }}"
+- datetime:
+    text_size: xl
+    format:
+      timeStyle: short
+      dateStyle: short
+      hourCycle: h23
+{% for w in homepage_widgets_extra %}
+{% for k, cfg in w.items() %}
+- {{ k }}:
+{% for ck, cv in cfg.items() %}
+    {{ ck }}: {{ cv }}
+{% endfor %}
+{% endfor %}
+{% endfor %}

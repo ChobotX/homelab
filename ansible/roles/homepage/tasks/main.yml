@@ -1,0 +1,57 @@
+---
+- name: Ensure /opt/homepage layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/homepage
+    - /opt/homepage/config
+
+- name: Template homepage config files
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/opt/homepage/config/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - settings.yaml
+    - services.yaml
+    - widgets.yaml
+    - bookmarks.yaml
+    - docker.yaml
+  notify: Swap homepage service
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/homepage/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Swap homepage service
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/homepage/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap homepage service
+
+- name: Bring up Homepage stack
+  # recreate=auto lets compose own spec-diff recreates (new image, new
+  # Traefik labels). Self-heals label drift if a prior run's handler was
+  # killed before it could swap. The handler still owns .env/config
+  # swaps — those don't show up in compose's service-spec diff.
+  community.docker.docker_compose_v2:
+    project_src: /opt/homepage
+    state: present
+    pull: policy
+    wait: true
+    wait_timeout: 120

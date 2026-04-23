@@ -1,0 +1,347 @@
+---
+# Observability stack — Grafana + Prometheus + Loki + Tempo + Alertmanager + Alloy.
+# Grafana is the only service reachable from outside the observability network
+# (via Traefik on the `proxy` network). Everything else is internal-only.
+services:
+
+  grafana:
+    image: ${GRAFANA_IMAGE}
+    container_name: grafana
+    restart: unless-stopped
+    # SQLite WAL checkpoint on shutdown.
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    env_file:
+      - .env
+    user: "${GRAFANA_UID}:${GRAFANA_GID}"
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - proxy
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: ${GRAFANA_MEM_LIMIT}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+      traefik.http.routers.grafana.rule: "Host(`${OBSERVABILITY_HOST}`)"
+      traefik.http.routers.grafana.entrypoints: "websecure"
+      traefik.http.routers.grafana.tls: "true"
+      traefik.http.routers.grafana.tls.certresolver: "cloudflare"
+      traefik.http.routers.grafana.service: "grafana"
+      traefik.http.routers.grafana.middlewares: "wg-only@file,security-headers@file"
+      traefik.http.services.grafana.loadbalancer.server.port: "3000"
+      # Active healthcheck — keeps the swap invisible to the user.
+      traefik.http.services.grafana.loadbalancer.healthcheck.path: "/api/health"
+      traefik.http.services.grafana.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.grafana.loadbalancer.healthcheck.timeout: "2s"
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE}
+    container_name: prometheus
+    restart: unless-stopped
+    # TSDB head compaction on SIGTERM needs time.
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    user: "${PROMETHEUS_UID}:${PROMETHEUS_GID}"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION}
+      - --web.enable-lifecycle
+      - --web.enable-remote-write-receiver
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - ./data/prometheus:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+    # `host.docker.internal` resolves to the host's gateway IP on the
+    # observability bridge — used by the optional nvidia_gpu_exporter scrape
+    # job (exporter runs as systemd on the host, not a compose service).
+    # Safe no-op when GPU is disabled.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/-/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: ${PROMETHEUS_MEM_LIMIT}
+
+  loki:
+    image: ${LOKI_IMAGE}
+    container_name: loki
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "${LOKI_UID}:${LOKI_GID}"
+    command:
+      - -config.file=/etc/loki/config.yml
+    # Push endpoint published on WG IP only — other peers (HA) can ship logs
+    # without going through Traefik. WG-only stays enforced at the network layer.
+    ports:
+      - "${WG_IP}:3100:3100/tcp"
+    volumes:
+      - ./data/loki:/loki
+      - ./loki-config.yml:/etc/loki/config.yml:ro
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: ${LOKI_MEM_LIMIT}
+
+  tempo:
+    image: ${TEMPO_IMAGE}
+    container_name: tempo
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "${TEMPO_UID}:${TEMPO_GID}"
+    command:
+      - -config.file=/etc/tempo.yml
+    volumes:
+      - ./data/tempo:/var/tempo
+      - ./tempo-config.yml:/etc/tempo.yml:ro
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3200/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: ${TEMPO_MEM_LIMIT}
+
+  alertmanager:
+    image: ${ALERTMANAGER_IMAGE}
+    # No container_name — docker-rollout temporarily runs two replicas
+    # during a swap (scale=2 → drain old → scale=1) and container_name
+    # would collide on the second instance.
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    user: "${ALERTMANAGER_UID}:${ALERTMANAGER_GID}"
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=0.0.0.0:9093
+      - --web.external-url=https://${ALERTMANAGER_HOST}
+    volumes:
+      - ./data/alertmanager:/alertmanager
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    networks:
+      - proxy
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9093/-/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: ${ALERTMANAGER_MEM_LIMIT}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+      traefik.http.routers.alertmanager.rule: "Host(`${ALERTMANAGER_HOST}`)"
+      traefik.http.routers.alertmanager.entrypoints: "websecure"
+      traefik.http.routers.alertmanager.tls: "true"
+      traefik.http.routers.alertmanager.tls.certresolver: "cloudflare"
+      traefik.http.routers.alertmanager.service: "alertmanager"
+      # Same basic-auth gate as the Traefik dashboard; wg-only restricts to VPN.
+      traefik.http.routers.alertmanager.middlewares: "wg-only@file,security-headers@file,dashboard-auth@file"
+      traefik.http.services.alertmanager.loadbalancer.server.port: "9093"
+      # Active healthcheck — required for docker-rollout blue/green to
+      # work correctly (Traefik must refuse to route to the old container
+      # once it starts failing /-/ready during drain).
+      traefik.http.services.alertmanager.loadbalancer.healthcheck.path: "/-/ready"
+      traefik.http.services.alertmanager.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.alertmanager.loadbalancer.healthcheck.timeout: "2s"
+
+  alloy:
+    image: ${ALLOY_IMAGE}
+    container_name: alloy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pid: host
+    ports:
+      - "${WG_IP}:514:514/udp"
+      - "${WG_IP}:514:514/tcp"
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+    volumes:
+      - ./alloy-config.alloy:/etc/alloy/config.alloy:ro
+      - ./data/alloy:/var/lib/alloy/data
+      - /:/host/rootfs:ro,rslave
+      - /var/log:/var/log:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - /opt/traefik/logs:/host/opt/traefik/logs:ro
+      - /var/lib/node_exporter/textfile:/var/lib/node_exporter/textfile:ro
+    networks:
+      - observability
+    # No healthcheck — grafana/alloy images ship without wget/curl/nc, so
+    # any shell-based probe fails. Alloy is internal-only (no Traefik
+    # router) so a probe isn't needed for zero-downtime; `up --wait` still
+    # waits for the container to not-exit, which is enough here.
+    deploy:
+      resources:
+        limits:
+          memory: ${ALLOY_MEM_LIMIT}
+
+  blackbox_exporter:
+    image: ${BLACKBOX_IMAGE}
+    container_name: blackbox_exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # NET_RAW for ICMP prober (ping). Drop this if only HTTP/TCP probes used.
+    cap_add:
+      - NET_RAW
+    read_only: true
+    volumes:
+      - ./blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    command:
+      - --config.file=/etc/blackbox_exporter/config.yml
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9115/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: ${BLACKBOX_MEM_LIMIT}
+
+  # ntfy — self-hosted push-notification server. Primary notification channel
+  # for Alertmanager via the ntfy-alertmanager bridge below. Email stays wired
+  # up in Alertmanager as a fallback that fires only when the push path itself
+  # is unhealthy (meta-alerts routed via `channel: email` label).
+  ntfy:
+    image: ${NTFY_IMAGE}
+    # No container_name — docker-rollout temporarily runs two replicas during
+    # a blue/green swap (scale=2 → drain old → scale=1) and container_name
+    # would collide on the second instance. Mirrors alertmanager above.
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - serve
+    volumes:
+      - ./ntfy-server.yml:/etc/ntfy/server.yml:ro
+      - ./data/ntfy/cache:/var/cache/ntfy
+      - ./data/ntfy/lib:/var/lib/ntfy
+    networks:
+      - proxy
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/v1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: ${NTFY_MEM_LIMIT}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+      traefik.http.routers.ntfy.rule: "Host(`${NTFY_HOST}`)"
+      traefik.http.routers.ntfy.entrypoints: "websecure"
+      traefik.http.routers.ntfy.tls: "true"
+      traefik.http.routers.ntfy.tls.certresolver: "cloudflare"
+      traefik.http.routers.ntfy.service: "ntfy"
+      # wg-only keeps the server off the public internet; phone subscribes via
+      # WG. Anonymous publish/subscribe on the `homelab-alerts` topic is safe
+      # inside the WG perimeter.
+      traefik.http.routers.ntfy.middlewares: "wg-only@file,security-headers@file"
+      traefik.http.services.ntfy.loadbalancer.server.port: "80"
+      # Active healthcheck — Traefik refuses to route to the draining old
+      # container during docker-rollout once /v1/health stops responding.
+      traefik.http.services.ntfy.loadbalancer.healthcheck.path: "/v1/health"
+      traefik.http.services.ntfy.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.ntfy.loadbalancer.healthcheck.timeout: "2s"
+
+  # ntfy-alertmanager bridge — receives Alertmanager's native webhook JSON,
+  # translates firing/resolved alerts into ntfy messages with priority/tags
+  # derived from `severity` labels. Internal-only: AM reaches it by DNS name
+  # on the observability network. Webhook endpoint on port 8080 root path.
+  ntfy_alertmanager:
+    image: ${NTFY_BRIDGE_IMAGE}
+    container_name: ntfy_alertmanager
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    volumes:
+      - ./ntfy-alertmanager.scfg:/etc/ntfy-alertmanager/config:ro
+    networks:
+      - observability
+    # No HTTP healthcheck — the bridge only serves POST on `/`; a GET probe
+    # returns 4xx. TCP-connect is covered by the blackbox probe in prometheus.
+    deploy:
+      resources:
+        limits:
+          memory: ${NTFY_BRIDGE_MEM_LIMIT}
+
+networks:
+  proxy:
+    external: true
+  observability:
+    external: true

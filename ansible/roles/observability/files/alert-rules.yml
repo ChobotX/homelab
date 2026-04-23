@@ -1,0 +1,288 @@
+---
+# Prometheus alert rules — evaluated every 30s by Prometheus, routed by Alertmanager.
+# Grafana's unified alerting mirrors these via file provisioning for UI visibility.
+groups:
+  - name: host
+    interval: 30s
+    rules:
+      - alert: HostDiskAlmostFull
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"}
+           / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Root filesystem <10% free on {{ $labels.instance }}"
+          description: "{{ $value | humanizePercentage }} free"
+
+      - alert: ElementsHDDMissing
+        # /mnt/elements holds observability TSDB + Loki chunks + traefik logs
+        # via bind mounts (see storage role). If node_exporter stops reporting
+        # a series for this mountpoint the disk is detached or unmounted —
+        # bind mounts will refuse to activate on next boot and services will
+        # either fail to start or regress to writing on the SSD (shadowed).
+        expr: absent(node_filesystem_avail_bytes{mountpoint="/mnt/elements"})
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "/mnt/elements unmounted — observability + traefik log binds will fail"
+          description: "btrfs data disk gone from node_exporter output; check dmesg and storage role state"
+
+      - alert: ElementsHDDAlmostFull
+        # 90% full = time to prune retention or grow. btrfs doesn't like
+        # running past ~95% (metadata COW needs slack), so 10% is a real cap.
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/mnt/elements"}
+           / node_filesystem_size_bytes{mountpoint="/mnt/elements"}) < 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "/mnt/elements <10% free — prune observability retention or grow storage"
+          description: "{{ $value | humanizePercentage }} free"
+
+      - alert: DockerPruneStale
+        # docker-prune.timer fires weekly (Sun 04:15). Two missed runs (>14d)
+        # means the timer is broken — unattended image+cache growth on SSD.
+        # absent() covers the bootstrap gap (metric doesn't exist until the
+        # first prune runs) via OR on a sentinel check, keeping the alert
+        # dormant on brand-new hosts.
+        expr: |
+          (time() - docker_prune_last_run_timestamp_seconds) > 14 * 86400
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "docker-prune has not run in {{ $value | humanizeDuration }} — timer broken?"
+          description: "check `systemctl status docker-prune.timer` and last journal entries with `journalctl -u docker-prune.service`"
+
+      - alert: HostOutOfMemory
+        expr: |
+          node_memory_MemAvailable_bytes
+          / node_memory_MemTotal_bytes < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host memory <10% available on {{ $labels.instance }}"
+
+      - alert: HostHighCpuLoad
+        expr: |
+          100 - (avg by (instance)
+                 (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU {{ $value | printf \"%.0f\" }}% sustained on {{ $labels.instance }}"
+
+  - name: containers
+    interval: 30s
+    rules:
+      # Source: docker-state-exporter.sh → textfile collector. One series per
+      # container Docker knows about, keyed by `name` — auto-discovered, no
+      # allow-list to maintain. Stopped/removed containers drop out naturally.
+      #
+      # `for: 15m` swallows docker-rollout / force-recreate transients (a
+      # container briefly reports running=0 mid-swap). `and on(name)
+      # (docker_container_running offset 15m)` requires the same container
+      # to have existed 15m ago, suppressing alerts on phantom/stale series
+      # left over from renamed containers (e.g. alertmanager -> observability-
+      # alertmanager-2 after the docker-rollout migration).
+      - alert: ContainerDown
+        expr: |
+          (docker_container_running == 0)
+          and on(name) (docker_container_running offset 15m)
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} not running for >15m"
+
+      - alert: ContainerUnhealthy
+        expr: docker_container_health{status="unhealthy"} == 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} reporting unhealthy"
+
+      - alert: ContainerRestartStorm
+        expr: increase(docker_container_restarts[15m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarted {{ $value }}× in 15m"
+
+      - alert: ContainerHighMemory
+        expr: |
+          (container_memory_working_set_bytes
+           / container_spec_memory_limit_bytes) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} using >90% of its memory limit"
+
+  - name: backup
+    interval: 1m
+    rules:
+      - alert: BackupDidNotRunRecently
+        expr: (time() - restic_last_backup_timestamp_seconds) > 86400 * 2
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "restic backup stale — last run {{ $value | humanizeDuration }} ago on {{ $labels.instance }}"
+
+      - alert: HomeAssistantBackupStale
+        # Fires when the newest HA backup tar on the Storage Box is older than
+        # 36h (one missed nightly + half a day of grace). Exporter runs hourly
+        # from the backup role; poll failures keep the last known value until
+        # the next successful run overwrites it.
+        expr: (time() - ha_last_backup_timestamp_seconds) > 36 * 3600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Home Assistant off-site backup stale — newest tar {{ $value | humanizeDuration }} old"
+
+      - alert: HomeAssistantBackupMissing
+        # Exporter could not find any tar at all. Either HA has never written
+        # one, the CIFS mount is broken on the HA side, or the remote path
+        # in the role defaults drifted.
+        expr: ha_last_backup_timestamp_seconds == 0
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No Home Assistant backup tars found on the Storage Box"
+
+      - alert: HomeAssistantBackupExporterStuck
+        # Exporter itself hasn't run for 3h (hourly timer + jitter + grace).
+        # Probably systemd unit failed; investigate on the homelab.
+        expr: (time() - ha_backup_exporter_last_run_timestamp_seconds) > 3 * 3600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HA backup freshness exporter has not run in {{ $value | humanizeDuration }}"
+
+      - alert: StorageBoxUnreachable
+        # ssh-keyscan to Hetzner Storage Box SFTP port failed on the last
+        # ansible converge. The backup role's block/rescue keeps existing
+        # known_hosts (Hetzner rarely rotates keys), so scheduled backups
+        # still work — but a sustained 0 means maintenance overran or the
+        # box is genuinely down and restic backups will stop soon.
+        expr: storagebox_sftp_reachable == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Storage Box SFTP unreachable for {{ $value | humanizeDuration }} — keyscan failing"
+
+  - name: homeassistant
+    interval: 1m
+    rules:
+      - alert: HomeAssistantDown
+        # Prom scrape target offline — HA is unreachable or the /api/prometheus
+        # endpoint returned an error. Covers both HA Core crashed and HAOS WG
+        # down (host-level `wg0` is the path the scrape takes back).
+        expr: up{job="homeassistant"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Home Assistant scrape target down for {{ $value | humanizeDuration }}"
+
+      - alert: HomeAssistantAlloyDown
+        # Alloy on HAOS ships journald → Loki. If the scrape target is down,
+        # either the container crashed, HAOS hung, or the WG tunnel dropped.
+        # Prom scrape address: 10.8.0.7:12345 (see prometheus.yml.j2 job).
+        expr: up{job="homeassistant-alloy"} == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alloy on HAOS down for {{ $value | humanizeDuration }} — HA logs not flowing"
+
+      - alert: HomeAssistantRPiHot
+        # RPi CPU temp sensor from HA command_line integration (reads
+        # /sys/class/thermal/thermal_zone0/temp). Warn over 65°C sustained for
+        # 5m — gives headroom before the 75°C critical threshold (RPi4 starts
+        # soft-throttling at 80°C, hard-throttling at 85°C).
+        expr: hass_sensor_temperature_celsius{entity="sensor.rpi_cpu_temperature"} > 65
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RPi CPU on HA is {{ $value }}°C — sustained >65°C, check cooling"
+
+      - alert: HomeAssistantRPiThrottling
+        # Critical pre-throttle warning — >75°C for 2m means the RPi is
+        # climbing toward the 80°C soft-throttle point. Act before it throttles.
+        expr: hass_sensor_temperature_celsius{entity="sensor.rpi_cpu_temperature"} > 75
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RPi CPU on HA is {{ $value }}°C — approaching throttle range, act now"
+
+  - name: certs
+    interval: 1m
+    rules:
+      - alert: CertExpiringSoon
+        expr: (traefik_tls_certs_not_after - time()) < 7 * 86400
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "TLS cert for {{ $labels.sans }} expires in <7d"
+
+  - name: uptime
+    interval: 30s
+    rules:
+      - alert: ProbeFailed
+        # blackbox_exporter probe_success=0 — endpoint unreachable, TLS broken,
+        # or non-2xx. 3m window swallows transients (brief redeploys, DNS hiccups).
+        expr: probe_success == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Probe failed: {{ $labels.instance }}"
+          description: "probe_success=0 for 3m on {{ $labels.instance }} (job {{ $labels.job }})"
+
+  # Push notification channel — ntfy is the primary delivery path. These alerts
+  # carry `channel: email` so the Alertmanager route tree short-circuits past
+  # the (broken) push receiver and reaches the inbox.
+  - name: push_channel
+    interval: 30s
+    rules:
+      - alert: PushChannelUnreachable
+        # Either ntfy itself or the AM→ntfy bridge is down. Blackbox probes
+        # are defined inline in prometheus.yml (blackbox_push_channel job).
+        expr: probe_success{job="blackbox_push_channel"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          channel: email
+        annotations:
+          summary: "Push notification path down ({{ $labels.instance }}) — falling back to email"
+          description: "probe_success=0 for 5m; any alerts that fire right now will only surface via email"
+
+      - alert: AlertmanagerPushDeliveryFailing
+        # Alertmanager's own counter of failed webhook deliveries. Catches the
+        # case where ntfy/bridge look up (blackbox passes) but AM still can't
+        # reach them (DNS, firewall, auth drift).
+        expr: increase(alertmanager_notifications_failed_total{integration="webhook"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          channel: email
+        annotations:
+          summary: "Alertmanager webhook deliveries failing — push broken"
+          description: "{{ $value }} failed webhook deliveries in 15m — inspect alertmanager logs"

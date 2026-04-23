@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly apt cache purge (managed by Ansible)
+
+[Timer]
+# Sunday 03:30 — before docker-prune at 04:15, well after nightly backups.
+OnCalendar=Sun *-*-* 03:30:00
+Persistent=true
+AccuracySec=5min
+RandomizedDelaySec=15min
+Unit=apt-clean.service
+
+[Install]
+WantedBy=timers.target

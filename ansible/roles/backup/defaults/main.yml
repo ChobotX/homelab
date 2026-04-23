@@ -1,0 +1,40 @@
+---
+# Schedule: daily at 03:00 local time.
+backup_timer_oncalendar: "*-*-* 03:00:00"
+
+# Paths included in the restic backup set.
+backup_paths:
+  - /opt/vaultwarden/data
+  - /opt/traefik/letsencrypt
+  - /opt/observability/data/grafana
+  - /opt/observability/data/alertmanager
+  - /etc/wireguard
+  - /etc/ssh
+  - "/home/{{ admin_user }}"
+
+# Paths excluded (globs).
+backup_excludes:
+  - "*.tmp"
+  - "*.log"
+  - "**/.cache/**"
+  - "**/node_modules/**"
+
+# Retention for `restic forget`.
+backup_keep_daily: 7
+backup_keep_weekly: 4
+backup_keep_monthly: 6
+
+# Hetzner Storage Box SSH port (23 = full SFTP + restricted shell + rsync/borg).
+# Port 22 serves only SFTP and exposes different host keys, so keyscan MUST
+# target 23 or ssh calls fail StrictHostKeyChecking and the HA freshness
+# exporter silently reports 0 (which triggers HomeAssistantBackupStale).
+backup_sftp_port: 23
+
+# Home Assistant backup freshness exporter.
+# Path relative to the Storage Box home dir where HA's CIFS mount writes tars.
+# If HA's CIFS share is `backup/homeassistant`, the tars land in `homeassistant/`
+# when seen via SSH/SFTP (the `backup` share == the user's home dir).
+backup_ha_remote_path: "homeassistant"
+# Set false to skip deploying the exporter + timer (e.g. if HA off-site backup
+# is ever removed). Leaves the gauge absent instead of reporting zero.
+backup_ha_monitor_enabled: true

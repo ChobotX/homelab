@@ -1,0 +1,14 @@
+# Managed by Ansible — fail2ban role.
+[DEFAULT]
+bantime   = {{ fail2ban_bantime }}
+findtime  = {{ fail2ban_findtime }}
+maxretry  = {{ fail2ban_maxretry }}
+backend   = systemd
+banaction = ufw
+# VPN subnet is trusted — never ban ourselves.
+ignoreip  = 127.0.0.1/8 ::1 {{ wireguard_subnet }}
+
+[sshd]
+enabled = true
+port    = ssh
+mode    = {{ fail2ban_ssh_mode }}

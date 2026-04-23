@@ -1,0 +1,57 @@
+---
+# Syncthing remote-ingest node. GUI fronted by Traefik (WG-only + dashboard-auth).
+# Sync protocol (tcp+udp/22000) bound to the WG IP only — no public ingress,
+# WG peers reach it by explicit device ID.
+
+- name: Ensure /opt/syncthing layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/syncthing
+    - /opt/syncthing/config
+
+- name: Ensure Syncthing sync root exists (HDD, via storage bind)
+  # Storage role binds /opt/media; this subdir materialises on the btrfs
+  # target. Jellyfin mounts /opt/media:ro so this tree is visible at
+  # /media/incoming on the streaming side.
+  ansible.builtin.file:
+    path: "{{ syncthing_sync_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/syncthing/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Swap syncthing service
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/syncthing/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap syncthing service
+
+- name: Bring up Syncthing stack
+  # `wait: true` surfaces container crash loops during first-deploy even
+  # when no template changed (i.e. handler wouldn't fire otherwise).
+  # `recreate: never` still avoids swapping a healthy container.
+  community.docker.docker_compose_v2:
+    project_src: /opt/syncthing
+    state: present
+    pull: policy
+    recreate: never
+    wait: true
+    wait_timeout: 60

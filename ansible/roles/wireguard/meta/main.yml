@@ -1,0 +1,11 @@
+---
+dependencies: []
+galaxy_info:
+  role_name: wireguard
+  author: homelab-admin
+  description: WireGuard client to a hub; private key generated out-of-band by bootstrap.sh
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]

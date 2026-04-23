@@ -1,0 +1,48 @@
+# Managed by Ansible — ssh_hardening role.
+# Drop-in under /etc/ssh/sshd_config.d/ overrides matching directives in the main sshd_config.
+
+# --- Authentication ---
+PasswordAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+HostbasedAuthentication no
+IgnoreRhosts yes
+UsePAM yes
+PubkeyAuthentication yes
+StrictModes yes
+
+AllowUsers {{ admin_user }}
+
+# --- Rate limiting ---
+MaxAuthTries 3
+MaxSessions 4
+LoginGraceTime 30
+
+# --- Timeouts ---
+ClientAliveInterval 300
+ClientAliveCountMax 2
+TCPKeepAlive no
+
+# --- Forwarding / tunneling — disabled, we use WireGuard for everything ---
+X11Forwarding no
+AllowAgentForwarding no
+AllowTcpForwarding no
+AllowStreamLocalForwarding no
+PermitTunnel no
+GatewayPorts no
+PermitUserEnvironment no
+
+# --- UX / logging ---
+PrintMotd no
+PrintLastLog yes
+LogLevel VERBOSE
+
+# --- Modern cryptography ---
+# Lists sourced from roles/ssh_hardening/defaults/main.yml (Mozilla Modern profile).
+KexAlgorithms {{ ssh_hardening_kex_algorithms | join(',') }}
+Ciphers {{ ssh_hardening_ciphers | join(',') }}
+MACs {{ ssh_hardening_macs | join(',') }}
+HostKeyAlgorithms {{ ssh_hardening_hostkey_algos | join(',') }}
+PubkeyAcceptedAlgorithms {{ ssh_hardening_pubkey_algos | join(',') }}

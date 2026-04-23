@@ -1,0 +1,107 @@
+---
+- name: Ensure /opt/traefik layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/traefik
+    - /opt/traefik/dynamic
+
+- name: Ensure acme directory exists (0700 is enough — Traefik creates acme.json at 0600)
+  ansible.builtin.file:
+    path: /opt/traefik/letsencrypt
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Ensure Traefik logs directory exists
+  ansible.builtin.file:
+    path: /opt/traefik/logs
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# The `proxy` and `observability` docker networks are created in the `docker`
+# role (end of infra phase) so this role can run in parallel with
+# observability/vaultwarden/homepage without racing on network creation or the
+# dpkg lock. apache2-utils (htpasswd) lives in common_packages for the same
+# reason.
+
+- name: Generate Traefik dashboard basicauth line
+  ansible.builtin.command:
+    argv:
+      - htpasswd
+      - -nbB
+      - "{{ traefik_dashboard_user }}"
+      - "{{ traefik_dashboard_password }}"
+  register: traefik_dashboard_basicauth_raw
+  changed_when: false
+  no_log: true
+
+- name: Export basicauth (no $ escaping — template target is static YAML, not docker-compose env)
+  ansible.builtin.set_fact:
+    traefik_dashboard_basicauth: "{{ traefik_dashboard_basicauth_raw.stdout }}"
+  no_log: true
+
+- name: Template traefik.yml (static config)
+  # Static config — entrypoints, providers, certresolvers — requires a
+  # restart to take effect.
+  ansible.builtin.template:
+    src: traefik.yml.j2
+    dest: /opt/traefik/traefik.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap traefik service
+
+- name: Template dynamic middlewares config
+  # Dynamic config — Traefik's file provider watches /etc/traefik/dynamic
+  # and hot-reloads middleware/router changes without a restart. No notify.
+  ansible.builtin.template:
+    src: dynamic-middlewares.yml.j2
+    dest: /opt/traefik/dynamic/middlewares.yml
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Template HA reverse-proxy route (file provider)
+  ansible.builtin.template:
+    src: dynamic-homeassistant.yml.j2
+    dest: /opt/traefik/dynamic/homeassistant.yml
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/traefik/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Swap traefik service
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/traefik/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap traefik service
+
+- name: Bring up Traefik stack
+  # First-deploy safety net. `recreate: never` leaves running containers
+  # untouched on compose/image changes so the per-service handler owns
+  # every swap (with its --wait gate).
+  community.docker.docker_compose_v2:
+    project_src: /opt/traefik
+    state: present
+    pull: policy
+    recreate: never

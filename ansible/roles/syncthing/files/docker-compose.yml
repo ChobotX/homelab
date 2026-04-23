@@ -1,0 +1,86 @@
+---
+# Syncthing — peer-to-peer file sync for remote media ingest.
+# GUI fronted by Traefik on the `proxy` network. Also joins `observability`
+# so future /metrics scrapes work. Sync protocol binds to the WG IP only.
+services:
+  syncthing:
+    image: ${SYNCTHING_IMAGE}
+    container_name: syncthing
+    restart: unless-stopped
+    # .stfolder marker writes + on-disk index flush need a moment before SIGKILL.
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Entrypoint uses su-exec to drop privileges even when PUID=0 — it
+      # unconditionally calls setgroups()/setuid() which require CAP_SETGID
+      # + CAP_SETUID. cap_drop:ALL strips both → "setgroups(0): Operation
+      # not permitted" → exit 1 → crash loop. Minimum set to let su-exec
+      # finish (process itself runs as root after that, no extra caps used).
+      - SETGID
+      - SETUID
+    # NOT read_only: true — Syncthing's entrypoint + 2.x runtime write outside
+    # the mounted /var/syncthing (PID files, cert rehash). cap_drop:ALL +
+    # no-new-privileges + confined volumes carry the defence.
+    tmpfs:
+      - /tmp
+    env_file:
+      - .env
+    environment:
+      # Bind the GUI to all container interfaces; Traefik reaches it via
+      # proxy network DNS. External access is gated by wg-only + dashboard-auth.
+      STGUIADDRESS: "0.0.0.0:8384"
+      # Run as root inside container. Image entrypoint does
+      # `chown $PUID:$PGID /var/syncthing` at startup; with cap_drop:ALL the
+      # CHOWN capability is gone, so any non-zero chown fails and `set -eu`
+      # aborts the entrypoint. PUID=PGID=0 makes that chown a no-op.
+      PUID: "0"
+      PGID: "0"
+    volumes:
+      - ./config:/var/syncthing
+      - ${SYNCTHING_SYNC_ROOT}:/var/syncthing/Sync:rw
+    # Sync protocol ports bound to WG IP only — no public ingress. Peers
+    # connect over the tunnel by explicit device ID (no global discovery,
+    # no relay). UDP/22000 is QUIC.
+    ports:
+      - "${WG_IP}:22000:22000/tcp"
+      - "${WG_IP}:22000:22000/udp"
+    networks:
+      - proxy
+      - observability
+    healthcheck:
+      # Upstream-recommended probe — official Syncthing Docker README uses
+      # this exact form (curl + grep OK). Earlier wget variant silently fails
+      # in the 2.x image; curl is present by design for this healthcheck.
+      test: ["CMD-SHELL", "curl -fkLsS -m 2 127.0.0.1:8384/rest/noauth/health | grep -o --color=never OK || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+
+      traefik.http.routers.syncthing.rule: "Host(`${SYNCTHING_HOST}`)"
+      traefik.http.routers.syncthing.entrypoints: "websecure"
+      traefik.http.routers.syncthing.tls: "true"
+      traefik.http.routers.syncthing.tls.certresolver: "cloudflare"
+      traefik.http.routers.syncthing.service: "syncthing"
+      # Double-gate: wg-only (tunnel required) + dashboard-auth (basic-auth).
+      # Syncthing's own docs warn against exposing the GUI without additional
+      # auth; we reuse the existing dashboard htpasswd rather than minting a
+      # new secret.
+      traefik.http.routers.syncthing.middlewares: "wg-only@file,dashboard-auth@file,security-headers@file"
+      traefik.http.services.syncthing.loadbalancer.server.port: "8384"
+      # Active healthcheck — same sub-second swap pattern as the others.
+      traefik.http.services.syncthing.loadbalancer.healthcheck.path: "/rest/noauth/health"
+      traefik.http.services.syncthing.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.syncthing.loadbalancer.healthcheck.timeout: "2s"
+
+networks:
+  proxy:
+    external: true
+  observability:
+    external: true

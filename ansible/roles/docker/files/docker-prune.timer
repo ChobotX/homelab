@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly Docker prune (managed by Ansible)
+
+[Timer]
+# Sunday 04:15 local time — off-peak, well after nightly backups.
+OnCalendar=Sun *-*-* 04:15:00
+Persistent=true
+AccuracySec=5min
+RandomizedDelaySec=15min
+Unit=docker-prune.service
+
+[Install]
+WantedBy=timers.target

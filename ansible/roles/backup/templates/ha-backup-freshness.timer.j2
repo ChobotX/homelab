@@ -1,0 +1,13 @@
+[Unit]
+Description=Run HA backup freshness exporter hourly (managed by Ansible)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=ha-backup-freshness.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

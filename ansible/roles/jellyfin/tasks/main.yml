@@ -1,0 +1,84 @@
+---
+# Jellyfin media server. Fronted by Traefik on the `proxy` network, also on
+# `observability` so Prometheus can scrape /metrics. Bind-mounts
+# config/cache/metadata land on HDD via storage role; media tree read-only.
+
+- name: Ensure /opt/jellyfin layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/jellyfin
+    - /opt/jellyfin/config
+    - /opt/jellyfin/cache
+    - /opt/jellyfin/metadata
+
+- name: Ensure media library subdirs exist (HDD, via storage bind)
+  # Storage role binds /opt/media itself; we create subdirs AFTER that so
+  # writes land on the btrfs target, not the shadowed SSD mount-point.
+  ansible.builtin.file:
+    path: "{{ jellyfin_media_root }}/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - movies
+    - tv
+    - music
+    - incoming
+
+- name: Probe for Intel QuickSync VA-API device
+  # Presence of /dev/dri/renderD128 IS the truth — same posture as
+  # nvidia_smi_stat in site.yml. HW transcoding path is gated on this.
+  ansible.builtin.stat:
+    path: /dev/dri/renderD128
+  register: jellyfin_dri_stat
+
+- name: Read render group GID (when /dev/dri present)
+  # container UID must be in `render` gid to open renderD128. getent reads the
+  # passwd/group database through NSS, not just /etc/group — covers LDAP hosts
+  # even though ours is local-only.
+  ansible.builtin.command: getent group render
+  register: jellyfin_render_group
+  changed_when: false
+  failed_when: false
+  when: jellyfin_dri_stat.stat.exists
+
+- name: Set jellyfin_hw_transcode facts
+  ansible.builtin.set_fact:
+    jellyfin_hw_transcode: "{{ jellyfin_dri_stat.stat.exists
+                               and (jellyfin_render_group.rc | default(1)) == 0 }}"
+    jellyfin_render_gid: "{{ (jellyfin_render_group.stdout | default('::0:')).split(':')[2] | default('0') }}"
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/jellyfin/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Swap jellyfin service
+
+- name: Template docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: /opt/jellyfin/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap jellyfin service
+
+- name: Bring up Jellyfin stack
+  # First-deploy safety net. `recreate: never` leaves running containers
+  # untouched on compose/image changes so the per-service handler owns every
+  # swap (with its --wait gate).
+  community.docker.docker_compose_v2:
+    project_src: /opt/jellyfin
+    state: present
+    pull: policy
+    recreate: never

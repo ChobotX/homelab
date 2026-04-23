@@ -1,0 +1,92 @@
+---
+observability_network: observability
+observability_host: "grafana.{{ homelab_domain }}"
+observability_alertmanager_host: "alertmanager.{{ homelab_domain }}"
+observability_ntfy_host: "ntfy.{{ homelab_domain }}"
+
+observability_grafana_image: "grafana/grafana:11.3.1@sha256:fa801ab6e1ae035135309580891e09f7eb94d1abdbd2106bdc288030b028158c"
+observability_prometheus_image: "prom/prometheus:v3.1.0@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218"
+observability_loki_image: "grafana/loki:3.3.2@sha256:8af2de1abbdd7aa92b27c9bcc96f0f4140c9096b507c77921ffddf1c6ad6c48f"
+observability_tempo_image: "grafana/tempo:2.6.1@sha256:ef4384fce6e8ad22b95b243d8fc165628cda655376fd50e7850536ad89d71d50"
+observability_alertmanager_image: "prom/alertmanager:v0.28.0@sha256:d5155cfac40a6d9250ffc97c19db2c5e190c7bc57c6b67125c94903358f8c7d8"
+observability_alloy_image: "grafana/alloy:v1.5.1@sha256:01a63f4e032ce54ee94b22049bc27f597e74f85566478c377f4b5c7f020c1eb3"
+observability_blackbox_image: "prom/blackbox-exporter:v0.28.0@sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc"
+observability_ntfy_image: "binwiederhier/ntfy:v2.22.0@sha256:04873ec9343d39595567e9ac761744ef074d168deb5b9bafd5f73392ff18cebf"
+observability_ntfy_bridge_image: "xenrox/ntfy-alertmanager:1.0.0@sha256:81788c7905774b7b0b2ed6833b2bc4826a90a42e4b738706edcedd5f489e7a73"
+
+observability_prometheus_retention: "30d"
+observability_prometheus_scrape_interval: "30s"
+observability_loki_retention_hours: 336
+observability_tempo_retention_hours: 168
+
+# Home Assistant scrape path. Host + token are required, come from /etc/homelab/.
+observability_homeassistant_metrics_path: "/api/prometheus"
+# HAOS host-level WG IP — Alloy on HAOS binds its /metrics on this address so
+# Prom can scrape it over WG. Override in /etc/homelab/config.yml if different.
+observability_homeassistant_wg_ip: "10.8.0.7"
+
+# Container resource caps (single-host budget).
+observability_grafana_mem_limit: "256m"
+observability_prometheus_mem_limit: "512m"
+observability_loki_mem_limit: "512m"
+observability_tempo_mem_limit: "256m"
+observability_alertmanager_mem_limit: "64m"
+observability_alloy_mem_limit: "256m"
+observability_blackbox_mem_limit: "32m"
+observability_ntfy_mem_limit: "64m"
+observability_ntfy_bridge_mem_limit: "32m"
+
+# ntfy topic used for the Alertmanager → ntfy bridge. Private-by-wg network
+# perimeter — no per-user auth on the topic (wg-only middleware already gates
+# access at Traefik). Change only if the topic name collides.
+observability_ntfy_topic: "homelab-alerts"
+
+# Separate ntfy topic for CI deploy success notifications. Kept distinct from
+# homelab-alerts so the phone can mute/filter deploys without losing critical
+# alerts. Same wg-only perimeter, anonymous rw publish (the CI step on the
+# self-hosted runner posts here after a green deploy).
+observability_ntfy_deploy_topic: "homelab-deploy"
+
+# iOS push relay — Apple bans long-lived background sockets, so iOS can't
+# hold a WebSocket open to a self-hosted ntfy. Workaround: the self-hosted
+# server forwards a minimal poke-event to ntfy.sh (which has an APNs cert),
+# ntfy.sh wakes the iPhone via Apple Push, and the iOS app then fetches the
+# actual message body directly from this server. Privacy footprint: ntfy.sh
+# sees topic names + arrival timing, never content. Set to "" to disable.
+observability_ntfy_upstream_base_url: "https://ntfy.sh"
+
+# AM → bridge basic-auth username. Password is `ntfy_bridge_webhook_password`
+# and lives in /etc/homelab/secrets/ (bootstrap-generated).
+observability_ntfy_bridge_webhook_user: "alertmanager"
+
+# External uptime probe targets. Empty = scrape job not rendered (no-op).
+# Override in group_vars/all.yml once targets are known.
+observability_uptime_http_targets: []       # e.g. ["https://vault.example.com"]
+observability_uptime_icmp_targets: []       # e.g. WG hub IP for liveness
+
+# Container UIDs for bind-mount ownership.
+observability_grafana_uid: 472
+observability_grafana_gid: 472
+observability_prometheus_uid: 65534
+observability_prometheus_gid: 65534
+observability_loki_uid: 10001
+observability_loki_gid: 10001
+observability_tempo_uid: 10001
+observability_tempo_gid: 10001
+observability_alertmanager_uid: 65534
+observability_alertmanager_gid: 65534
+
+# NVIDIA GPU exporter (utkuozdemir/nvidia_gpu_exporter). Auto-enabled on hosts
+# where `/usr/bin/nvidia-smi` is present — `nvidia_gpu_enabled` fact set in
+# playbooks/site.yml pre_tasks from ansible.builtin.stat.
+observability_nvidia_exporter_version: "1.4.1"
+observability_nvidia_exporter_sha256: "0c7dd64b424ff54c7860777faa4da703e5a7486ea258cf6d6f5620fc691feaa5"
+observability_nvidia_exporter_port: 9835
+
+# Host node_exporter — owns host OS metrics (cpu/mem/disk/netdev/hwmon/rapl
+# /textfile). Runs as systemd on the host, NOT inside Alloy, because netdev
+# (/proc/net/*) is netns-scoped — Alloy's container sees only its own bridge
+# interface, not the physical NIC. Prometheus scrapes via host-gateway.
+observability_node_exporter_version: "1.11.1"
+observability_node_exporter_sha256: "9f5ea48e5bc7b656f8a91a32e7d7deb89f70f73dabd0d974418aca15f37d6810"
+observability_node_exporter_port: 9100

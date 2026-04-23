@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Managed by Ansible — emits a Prometheus gauge with the mtime of the newest
+# Home Assistant backup tar found on the Hetzner Storage Box.
+# HA uses its native Backup integration + CIFS mount to write tars here; this
+# script is the homelab's only visibility into whether that pipeline is alive.
+set -euo pipefail
+
+REMOTE_DIR="{{ backup_ha_remote_path }}"
+OUT=/var/lib/node_exporter/textfile/ha_backup.prom
+
+# Hetzner Storage Box runs a restricted shell that does NOT support pipes,
+# redirections, or subshells — the whole `| awk | sort | tail` tail was
+# previously passed as literal args to `ls`, silently producing no output.
+# Parse on the client side instead.
+LISTING=$(ssh \
+  -i /root/.ssh/homelab_sb_id_ed25519 \
+  -p {{ backup_sftp_port }} \
+  -o BatchMode=yes \
+  -o ConnectTimeout=30 \
+  -o StrictHostKeyChecking=yes \
+  -o UserKnownHostsFile=/root/.ssh/known_hosts_sb \
+  {{ restic_sftp_user }}@{{ restic_sftp_host }} \
+  "ls -l --time-style=+%s ${REMOTE_DIR}/*.tar" \
+  2>/dev/null || true)
+
+LATEST=$(printf '%s\n' "$LISTING" | awk '/\.tar$/ {print $6}' | sort -n | tail -1)
+LATEST=${LATEST:-0}
+
+{
+  tmp="${OUT}.$$"
+  cat > "$tmp" <<PROM
+# HELP ha_last_backup_timestamp_seconds Unix mtime of newest HA backup tar on the Storage Box (0 = exporter could not find any).
+# TYPE ha_last_backup_timestamp_seconds gauge
+ha_last_backup_timestamp_seconds ${LATEST}
+# HELP ha_backup_exporter_last_run_timestamp_seconds Unix timestamp of the last exporter invocation.
+# TYPE ha_backup_exporter_last_run_timestamp_seconds gauge
+ha_backup_exporter_last_run_timestamp_seconds $(date +%s)
+PROM
+  mv "$tmp" "$OUT"
+} || echo "WARN: failed to publish ha_backup.prom" >&2

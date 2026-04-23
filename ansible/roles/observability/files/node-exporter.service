@@ -1,0 +1,24 @@
+[Unit]
+Description=Prometheus node_exporter (host OS metrics, managed by Ansible)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Binds 0.0.0.0:9100 so Prometheus (in the observability bridge network) can
+# reach it via host-gateway. UFW restricts inbound to Docker bridge subnets —
+# see roles/ufw. textfile dir is shared with docker-state-exporter + restic.
+ExecStart=/usr/local/sbin/node_exporter \
+  --web.listen-address=0.0.0.0:9100 \
+  --collector.textfile.directory=/var/lib/node_exporter/textfile
+Restart=on-failure
+RestartSec=5
+Nice=19
+IOSchedulingClass=best-effort
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

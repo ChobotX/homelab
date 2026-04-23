@@ -1,0 +1,14 @@
+---
+dependencies:
+  # UFW rules must exist before we tighten sshd — otherwise tightening over SSH
+  # with UFW default-deny applied mid-role = lockout.
+  - role: ufw
+galaxy_info:
+  role_name: ssh_hardening
+  author: homelab-admin
+  description: Lockout-safe sshd drop-in (key-only, modern crypto, no forwarding)
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]

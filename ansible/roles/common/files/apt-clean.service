@@ -1,0 +1,15 @@
+[Unit]
+Description=Weekly apt cache purge (managed by Ansible)
+# unattended-upgrades runs autoclean every 7 days via APT::Periodic, but
+# autoclean only removes superseded .debs. apt-get clean nukes the whole
+# /var/cache/apt/archives — that's where the 1.5G+ on the SSD comes from.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/apt-get clean
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

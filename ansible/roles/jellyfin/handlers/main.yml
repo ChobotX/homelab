@@ -1,0 +1,12 @@
+---
+# `up --wait` + container healthcheck + Traefik active loadbalancer healthcheck
+# keep the user-visible gap on a jellyfin swap sub-second. SQLite checkpoint
+# happens inside stop_grace_period (30s).
+
+- name: Swap jellyfin service
+  ansible.builtin.command:
+    chdir: /opt/jellyfin
+    # --force-recreate so bind-mounted env/compose changes actually trigger a
+    # restart (compose sees no service-spec diff otherwise).
+    cmd: docker compose up -d --wait --no-deps --force-recreate jellyfin
+  changed_when: true

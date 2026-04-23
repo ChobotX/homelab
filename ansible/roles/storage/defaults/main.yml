@@ -1,0 +1,41 @@
+---
+# /mnt/elements is a 1.9T btrfs disk on /dev/sdb1. Formatted out-of-band on
+# host console (wipefs + mkfs.btrfs) — same posture as WG keys: ansible
+# consumes a pre-existing artefact, never creates/destroys storage.
+storage_mount_point: /mnt/elements
+storage_mount_uuid: 7974fe93-4040-4c77-9265-04250f969cf6
+storage_mount_fstype: btrfs
+# zstd:3 is the btrfs sweet spot — strong ratio for logs/TSDB, CPU cost is
+# invisible next to the disk write. nofail + device-timeout=15 keep boot
+# usable even if the disk is physically detached.
+storage_mount_opts: "defaults,noatime,compress=zstd:3,nofail,x-systemd.device-timeout=15"
+
+# Each entry becomes a bind mount: /mnt/elements/<dst> → <src>.
+# The src path is created as an empty mount point (so it exists even on a
+# fresh host before the consumer role runs). The dst path under
+# /mnt/elements is where the real data lives.
+#
+# Ownership on the dst is applied to the *btrfs subdir*, not through the bind
+# — consumer roles (observability, traefik) already chown their own leaf
+# dirs, so we only set a safe top-level 0755 root-owned default here.
+storage_binds:
+  - src: /opt/observability/data
+    dst: observability-data
+  - src: /opt/traefik/logs
+    dst: traefik-logs
+  # Media stack — jellyfin + syncthing. Config/cache/metadata land on the HDD
+  # along with the library itself so the SSD stays reserved for OS + docker
+  # overlays. Transcode scratch goes to in-container tmpfs (RAM), not here.
+  - src: /opt/jellyfin/config
+    dst: jellyfin-config
+  - src: /opt/jellyfin/cache
+    dst: jellyfin-cache
+  - src: /opt/jellyfin/metadata
+    dst: jellyfin-metadata
+  - src: /opt/syncthing/config
+    dst: syncthing-config
+  # Shared media library. Syncthing writes into incoming/ (rw), jellyfin
+  # mounts the whole tree read-only. Arr roles (future) will write into
+  # movies/ + tv/ directly — layout already compatible.
+  - src: /opt/media
+    dst: media

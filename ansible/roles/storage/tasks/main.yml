@@ -1,0 +1,111 @@
+---
+# Manages the /mnt/elements btrfs mount and a list of bind mounts that relocate
+# growing/log data (observability TSDB, traefik access logs) off the SSD.
+#
+# Order matters:
+#   1. mount /mnt/elements (fstab + live mount) — must be up before we can
+#      create the btrfs target dirs underneath it.
+#   2. create btrfs target dirs (/mnt/elements/<dst>).
+#   3. create mount-point dirs (<src>) — empty, consumer role takes over later.
+#   4. add bind mounts (fstab + live mount).
+#
+# Cutover note: on first rollout the /opt/* src dirs already hold data. An
+# active bind mount would HIDE that data under the mountpoint. The one-shot
+# migration (rsync + mv old → side) must be done manually BEFORE this role's
+# binds activate, otherwise the existing data appears to vanish (still on
+# disk under the mountpoint, just shadowed). See README.md cutover procedure.
+
+- name: Ensure /mnt/elements is mounted (fstab + live)
+  ansible.posix.mount:
+    path: "{{ storage_mount_point }}"
+    src: "UUID={{ storage_mount_uuid }}"
+    fstype: "{{ storage_mount_fstype }}"
+    opts: "{{ storage_mount_opts }}"
+    state: mounted
+
+- name: Ensure btrfs target dirs exist
+  ansible.builtin.file:
+    path: "{{ storage_mount_point }}/{{ item.dst }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ storage_binds }}"
+  loop_control:
+    label: "{{ item.dst }}"
+
+- name: Ensure bind mount-point dirs exist on SSD
+  # Empty dirs that bind mounts attach to. Consumer roles (observability,
+  # traefik) also declare these — both are idempotent, no conflict.
+  ansible.builtin.file:
+    path: "{{ item.src }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ storage_binds }}"
+  loop_control:
+    label: "{{ item.src }}"
+
+# ── Migration guard ───────────────────────────────────────────────────────
+# Activating a bind mount on top of a non-empty src dir HIDES the existing
+# data (the original inodes still exist beneath the mountpoint, but apps see
+# only the empty btrfs target). On the first converge for any host that
+# already had data on /opt/*, this would silently corrupt the observability
+# stack — Prom would start a fresh empty TSDB while 30d of history is
+# shadowed underneath.
+#
+# Refuse to bind unless the src is either already a mountpoint (idempotent
+# re-converge) or empty (post-migration or fresh install).
+
+- name: Detect existing mountpoint on each bind src
+  ansible.builtin.command: "mountpoint -q {{ item.src }}"
+  register: storage_bind_mountpoint
+  changed_when: false
+  failed_when: false
+  loop: "{{ storage_binds }}"
+  loop_control:
+    label: "{{ item.src }}"
+
+- name: Inventory contents of each bind src
+  ansible.builtin.find:
+    paths: "{{ item.src }}"
+    file_type: any
+    hidden: true
+  register: storage_bind_contents
+  loop: "{{ storage_binds }}"
+  loop_control:
+    label: "{{ item.src }}"
+
+- name: Refuse to bind onto a non-empty unmigrated src
+  ansible.builtin.assert:
+    that:
+      # Either already mounted (rc=0 → idempotent re-converge) OR empty
+      # (rc=1, files=0 → fresh install or post-migration).
+      - storage_bind_mountpoint.results[ansible_loop.index0].rc == 0 or
+        storage_bind_contents.results[ansible_loop.index0].matched == 0
+    fail_msg: |
+      {{ item.src }} contains data and is not yet bind-mounted.
+      Activating the bind now would HIDE the existing data.
+      Migrate manually first: rsync {{ item.src }}/ onto {{ storage_mount_point }}/{{ item.dst }}/,
+      then `mv {{ item.src }} {{ item.src }}.pre-elements && mkdir {{ item.src }}`.
+      Re-run this playbook afterwards.
+  loop: "{{ storage_binds }}"
+  loop_control:
+    label: "{{ item.src }}"
+    extended: true
+
+- name: Ensure bind mounts are active (fstab + live)
+  # x-systemd.requires-mounts-for ties the bind's lifetime to /mnt/elements —
+  # if the btrfs disk is absent, the bind refuses to activate (fails loudly)
+  # rather than silently attaching to the empty SSD dir and letting writes
+  # regress to the SSD we're trying to protect.
+  ansible.posix.mount:
+    path: "{{ item.src }}"
+    src: "{{ storage_mount_point }}/{{ item.dst }}"
+    fstype: none
+    opts: "bind,x-systemd.requires-mounts-for={{ storage_mount_point }},nofail"
+    state: mounted
+  loop: "{{ storage_binds }}"
+  loop_control:
+    label: "{{ item.src }} → {{ storage_mount_point }}/{{ item.dst }}"

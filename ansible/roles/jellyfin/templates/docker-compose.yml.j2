@@ -1,0 +1,72 @@
+---
+# Jellyfin — self-hosted media server.
+# Fronted by Traefik on the `proxy` network. Also joins `observability` so
+# Prometheus can scrape /metrics once it's enabled in the dashboard.
+# No host port exposure — all traffic routes through Traefik on WG IP.
+services:
+  jellyfin:
+    image: ${JELLYFIN_IMAGE}
+    container_name: jellyfin
+    restart: unless-stopped
+    # SQLite WAL checkpoint + library scan state flush need a moment before SIGKILL.
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # NOT read_only: true — Jellyfin writes SQLite + plugin installs at runtime,
+    # and the config dir bind alone doesn't cover every path (e.g. /.jellyfin
+    # may be touched). cap_drop:ALL + confined volumes is the defense.
+    env_file:
+      - .env
+    volumes:
+      - ./config:/config
+      - ./cache:/cache
+      - ./metadata:/config/metadata
+      - ${JELLYFIN_MEDIA_ROOT}:/media:ro
+    # Transcode scratch → RAM. Spares HDD; contents are disposable.
+    tmpfs:
+      - /tmp
+      - /config/transcodes:size=${JELLYFIN_TRANSCODE_TMPFS_SIZE}
+{% if jellyfin_hw_transcode | default(false) | bool %}
+    # Intel QuickSync VA-API. Container user (jellyfin, uid 1000) joins the
+    # host `render` gid to open renderD128. Without this the VA-API probe
+    # inside jellyfin fails and it silently falls back to software transcode.
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+    group_add:
+      - "{{ jellyfin_render_gid }}"
+{% endif %}
+    networks:
+      - proxy
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8096/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+
+      traefik.http.routers.jellyfin.rule: "Host(`${JELLYFIN_HOST}`)"
+      traefik.http.routers.jellyfin.entrypoints: "websecure"
+      traefik.http.routers.jellyfin.tls: "true"
+      traefik.http.routers.jellyfin.tls.certresolver: "cloudflare"
+      traefik.http.routers.jellyfin.service: "jellyfin"
+      # No dashboard-auth — Jellyfin has its own login and basic-auth breaks
+      # the Android TV client. wg-only keeps it behind the tunnel.
+      traefik.http.routers.jellyfin.middlewares: "wg-only@file,security-headers@file"
+      traefik.http.services.jellyfin.loadbalancer.server.port: "8096"
+      # Active healthcheck — Traefik buffers new TCP during a swap so the
+      # gap becomes a sub-second blip, same pattern as vaultwarden.
+      traefik.http.services.jellyfin.loadbalancer.healthcheck.path: "/health"
+      traefik.http.services.jellyfin.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.jellyfin.loadbalancer.healthcheck.timeout: "2s"
+
+networks:
+  proxy:
+    external: true
+  observability:
+    external: true

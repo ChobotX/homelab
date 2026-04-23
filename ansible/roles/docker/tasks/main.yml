@@ -1,0 +1,190 @@
+---
+- name: Ensure prerequisite packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+
+- name: Ensure apt keyrings dir exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Add Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+
+- name: Read Docker GPG fingerprint
+  ansible.builtin.command: gpg --show-keys --with-fingerprint --with-colons /etc/apt/keyrings/docker.asc
+  register: docker_gpg_show
+  changed_when: false
+
+- name: Assert Docker GPG fingerprint matches the pinned value
+  # Refuse to install if the downloaded key doesn't match the expected
+  # fingerprint — blocks silent MITM or future compromise of Docker's key repo.
+  ansible.builtin.assert:
+    that:
+      - docker_gpg_fingerprint in (docker_gpg_show.stdout_lines | select('match', '^fpr:') | list | join('\n'))
+    fail_msg: |
+      Docker GPG fingerprint mismatch.
+      Expected: {{ docker_gpg_fingerprint }}
+      Found:    {{ docker_gpg_show.stdout_lines | select('match', '^fpr:') | list }}
+      Check https://docs.docker.com/engine/install/ubuntu/ and update defaults/main.yml.
+
+- name: Determine apt arch
+  ansible.builtin.set_fact:
+    docker_apt_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_architecture] | default(ansible_architecture) }}"
+
+- name: Add Docker apt repository
+  vars:
+    _docker_repo_url: "https://download.docker.com/linux/ubuntu"
+    _docker_repo_suite: "{{ ansible_distribution_release }} stable"
+    _docker_repo_opts: "arch={{ docker_apt_arch }} signed-by=/etc/apt/keyrings/docker.asc"
+  ansible.builtin.apt_repository:
+    repo: "deb [{{ _docker_repo_opts }}] {{ _docker_repo_url }} {{ _docker_repo_suite }}"
+    filename: docker
+    state: present
+    update_cache: true
+
+- name: Install Docker Engine + Compose plugin
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+
+- name: Ensure Docker CLI-plugins dir exists
+  ansible.builtin.file:
+    path: /usr/local/lib/docker/cli-plugins
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install docker-rollout CLI plugin (blue/green swap helper)
+  # Used by handlers that need zero-downtime swaps (e.g. alertmanager).
+  # SHA pinned — matches the repo's pin-everything supply-chain stance.
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/Wowu/docker-rollout/{{ docker_rollout_version }}/docker-rollout"
+    dest: /usr/local/lib/docker/cli-plugins/docker-rollout
+    checksum: "sha256:{{ docker_rollout_sha256 }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy Docker daemon.json
+  ansible.builtin.copy:
+    src: daemon.json
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart docker
+
+- name: Add admin user to docker group
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    groups: docker
+    append: true
+
+- name: Add CI runner user to docker group (for smoke checks / deploy steps)
+  # bootstrap.sh always creates this user; unconditional add is safe.
+  ansible.builtin.user:
+    name: gha-runner
+    groups: docker
+    append: true
+
+- name: Stat gha-runner-jit.service unit
+  # Unit is created by bootstrap.sh, not Ansible — clean test containers
+  # won't have it, and the mode-fix task below would fail without this gate.
+  ansible.builtin.stat:
+    path: /etc/systemd/system/gha-runner-jit.service
+  register: docker_gha_runner_unit
+
+- name: Ensure gha-runner-jit.service unit is world-readable
+  # bootstrap.sh writes it under umask 077 so pre-fix hosts have 0600 and
+  # systemd logs "marked world-inaccessible" every daemon-reload. 0644
+  # matches package-shipped units and silences the warning.
+  ansible.builtin.file:
+    path: /etc/systemd/system/gha-runner-jit.service
+    mode: "0644"
+    owner: root
+    group: root
+  when: docker_gha_runner_unit.stat.exists
+  notify: Reload systemd
+
+- name: Ensure docker service is enabled and running
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+# ── Weekly safe prune ─────────────────────────────────────────────────────
+# Reclaims stale images + build cache (>7d untouched). Does NOT touch volumes
+# or stopped containers — those are either intended data or useful for
+# post-mortem. node_exporter textfile dir (/var/lib/node_exporter/textfile)
+# is created by the observability role; running docker-prune before that role
+# has ever converged would fail — use `failed_when: false` on the first run
+# is tempting, but the timer only fires weekly at 04:15 Sun so the ordering
+# works out on any real homelab where observability converges first.
+
+- name: Deploy docker-prune script
+  ansible.builtin.copy:
+    src: docker-prune.sh
+    dest: /usr/local/sbin/docker-prune.sh
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Deploy docker-prune systemd service unit
+  ansible.builtin.copy:
+    src: docker-prune.service
+    dest: /etc/systemd/system/docker-prune.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Deploy docker-prune systemd timer unit
+  ansible.builtin.copy:
+    src: docker-prune.timer
+    dest: /etc/systemd/system/docker-prune.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start docker-prune timer
+  ansible.builtin.systemd:
+    name: docker-prune.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+
+# Shared docker networks — created here at the end of the infra phase so the
+# downstream app roles (observability, traefik, vaultwarden, homepage) can
+# converge in parallel without each role having to create the same network.
+# Both are declared `external: true` in every compose file that uses them, so
+# they must exist before any of those stacks come up.
+- name: Create shared observability docker network
+  community.docker.docker_network:
+    name: observability
+    state: present
+
+- name: Create shared proxy docker network
+  community.docker.docker_network:
+    name: proxy
+    state: present

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run WG handshake watchdog every minute (managed by Ansible)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=10s
+Unit=wg-watchdog.service
+
+[Install]
+WantedBy=timers.target

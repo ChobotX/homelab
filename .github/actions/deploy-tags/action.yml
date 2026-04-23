@@ -1,0 +1,83 @@
+---
+name: deploy-tags
+description: >-
+  Install ansible collections, write the local-convergence inventory, and run
+  ansible-playbook with the given --tags filter on the self-hosted runner.
+  Used by every job in the deploy DAG (deploy-infra, deploy-observability,
+  deploy-traefik, deploy-vaultwarden, deploy-homepage, deploy-backup) and by
+  the manual workflow_dispatch fallback (deploy-manual). Checkout must happen
+  in the caller — composite actions run in the parent repo's workspace.
+
+inputs:
+  tags:
+    description: "Ansible --tags filter (comma-separated). Must be non-empty."
+    required: true
+  check:
+    description: "Pass --check --diff to ansible-playbook"
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Refuse to run if not main
+      # Defence-in-depth: never apply from a non-main ref. Each call site
+      # already gates `if:` on main; this catches any regression.
+      shell: bash
+      run: |
+        if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+          echo "::error::deploy must only run on main; got ${GITHUB_REF}"
+          exit 1
+        fi
+
+    - name: Install Ansible collections
+      # Persistent host cache at /opt/gha-cache/ansible-collections (created
+      # by bootstrap.sh, owned by gha-runner). flock serialises the first
+      # install across parallel deploy-* jobs — concurrent galaxy on an
+      # empty tree races on MIT.txt. No --force: galaxy is idempotent and
+      # skips matching pins with zero network after first populate.
+      shell: bash
+      working-directory: ansible
+      env:
+        ANSIBLE_COLLECTIONS_PATH: /opt/gha-cache/ansible-collections
+      run: |
+        mkdir -p /opt/gha-cache/ansible-collections
+        flock /opt/gha-cache/ansible-collections/.lock \
+          ansible-galaxy install -r requirements.yml
+
+    - name: Override inventory for local run
+      # Sibling of ansible/group_vars/ so auto-discovery picks up `timezone`,
+      # `locale`, etc.
+      shell: bash
+      run: |
+        cat > ansible/inventory.ci.yml <<'EOF'
+        ---
+        all:
+          children:
+            homelab_servers:
+              hosts:
+                homelab:
+                  ansible_connection: local
+        EOF
+
+    - name: ansible-playbook (--tags ${{ inputs.tags }})
+      shell: bash
+      working-directory: ansible
+      env:
+        ANSIBLE_COLLECTIONS_PATH: /opt/gha-cache/ansible-collections
+        ANSIBLE_CACHE_PLUGIN_CONNECTION: /opt/gha-cache/ansible-facts
+        INPUT_TAGS: ${{ inputs.tags }}
+        INPUT_CHECK: ${{ inputs.check }}
+      run: |
+        set -euo pipefail
+        ARGS=(--tags "$INPUT_TAGS")
+        if [ "$INPUT_CHECK" = "true" ]; then
+          ARGS+=(--check --diff)
+        fi
+        # --force-handlers: notified handlers (service swaps) must fire even
+        # if a later task fails — prevents a half-recreated compose stack.
+        ansible-playbook \
+          --force-handlers \
+          -i inventory.ci.yml \
+          playbooks/site.yml \
+          "${ARGS[@]}"

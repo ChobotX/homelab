@@ -1,0 +1,5 @@
+{# Managed by Ansible — docker integration disabled by default. #}
+{# Homepage can query the Docker socket for per-container stats, but that #}
+{# means mounting /var/run/docker.sock RW into the container. We keep it #}
+{# locked down (cap_drop: ALL, read_only) and rely on Traefik labels + the #}
+{# observability stack instead. Empty config here = feature off. #}

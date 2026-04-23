@@ -1,0 +1,22 @@
+[Unit]
+Description=NVIDIA GPU Prometheus exporter (nvidia_gpu_exporter, managed by Ansible)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Listens on 0.0.0.0 so Prometheus (running in the observability bridge network)
+# can reach it via host-gateway. UFW rule restricts inbound to Docker's default
+# address pool; WG-only is enforced by the existing "allow from WG subnet" policy.
+ExecStart=/usr/local/sbin/nvidia_gpu_exporter --web.listen-address=0.0.0.0:9835 --nvidia-smi-command=/usr/bin/nvidia-smi
+Restart=on-failure
+RestartSec=5
+Nice=19
+IOSchedulingClass=best-effort
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

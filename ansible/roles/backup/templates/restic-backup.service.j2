@@ -1,0 +1,24 @@
+[Unit]
+Description=Restic backup (managed by Ansible)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/restic/restic.env
+# Send restic's cache to a dedicated writable location. ProtectHome=read-only
+# would otherwise forbid writes to /root/.cache — and restic cache is large
+# enough that falling back to in-memory destroys backup speed.
+Environment=XDG_CACHE_HOME=/var/cache/restic
+ExecStart=/usr/local/sbin/restic-backup.sh
+Nice=19
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/cache/restic /var/lib/node_exporter/textfile
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

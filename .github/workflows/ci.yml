@@ -1,0 +1,483 @@
+---
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: "Ansible --tags filter (blank = full run). Deploy only."
+        required: false
+        default: ""
+      check:
+        description: "Run deploy as --check only (no changes)"
+        type: boolean
+        default: false
+  # Weekly full reconverge to heal host drift that the per-role change gate
+  # would otherwise skip. Sunday 03:30 UTC — after restic backup's 03:00 CEST
+  # window finishes; `detect-changes.sh` forces all app buckets true for
+  # schedule events.
+  schedule:
+    - cron: '30 3 * * 0'
+
+# Hard-coded permission floor — fork PRs never see secrets.
+permissions:
+  contents: read
+
+# Newer pushes cancel older in-flight runs on the same ref. Deploys are
+# idempotent (Ansible converges), so cancelling a mid-deploy is safe — the
+# next run restarts from a clean workspace and re-converges.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint (yamllint + ansible-lint + gitleaks + shellcheck)
+    # Skip fork PRs — self-hosted runner must never execute untrusted code.
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    env:
+      # Persistent host cache (bootstrap.sh creates dir, chowns to gha-runner).
+      # Propagates to every step in this job — including ansible-lint, which
+      # honours ANSIBLE_COLLECTIONS_PATH when loading the pinned collections.
+      PIP_CACHE_DIR: /opt/gha-cache/pip
+      ANSIBLE_COLLECTIONS_PATH: /opt/gha-cache/ansible-collections
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Forbid mixed WG subnets (docs/code drift guard)
+        run: |
+          # `tests/` uses an intentionally-different subnet to catch hardcoded
+          # values — exclude from the guard.
+          conflicts=$(grep -rEho '10\.[0-9]+\.0\.0/24' \
+            --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=tests . \
+            | sort -u | wc -l)
+          if [ "$conflicts" -gt 1 ]; then
+            echo "::error::multiple WG subnets found (non-test files):"
+            grep -rEno '10\.[0-9]+\.0\.0/24' \
+              --exclude-dir=.git --exclude-dir=tests . | sort -u
+            exit 1
+          fi
+
+      - name: Forbid unsafe triggers on self-hosted runner
+        # pull_request_target and workflow_run on a public repo + self-hosted
+        # runner are a known unauth-RCE vector. Refuse to merge workflows that
+        # introduce them.
+        run: |
+          if grep -rEn '^[[:space:]]*(pull_request_target|workflow_run):' .github/workflows/; then
+            echo "::error::workflow uses pull_request_target or workflow_run — unsafe with a self-hosted runner"
+            exit 1
+          fi
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install ansible + yamllint + collections
+        # Install into setup-python's interpreter (lives under _work/_tool, JIT-wiped
+        # between jobs). Avoid `pip install --user` on self-hosted: writes to
+        # $HOME/.local which persists across jobs, so a runner-dir migration
+        # (e.g. /opt/actions-runner → /opt/actions-runner-N) leaves stale
+        # shebangs in ~/.local/bin pointing at a Python that no longer exists,
+        # and subsequent pip runs skip reinstall ("already satisfied") so
+        # shebangs never get refreshed → exit 127.
+        # galaxy is idempotent without --force: reads pinned version from the
+        # persistent cache dir, skips install when already present.
+        run: |
+          core_version=$(cat .ansible-version)
+          pip install "ansible-core==${core_version}" "yamllint==1.38.0"
+          mkdir -p /opt/gha-cache/ansible-collections
+          flock /opt/gha-cache/ansible-collections/.lock \
+            ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: yamllint
+        run: yamllint .
+
+      - uses: ansible/ansible-lint@5fac056c45595896c973fbde871f01f6cb14d74c  # v26.4.0
+        with:
+          args: "--profile=basic"
+          working_directory: ansible
+
+      - name: gitleaks (binary, avoids Node 20 deprecation on the JS action)
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set -euo pipefail
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "/tmp/${tarball}" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  /tmp/${tarball}" | sha256sum -c -
+          tar -xzf "/tmp/${tarball}" -C /tmp gitleaks
+          /tmp/gitleaks detect --no-banner --redact --verbose --exit-code 1 --source .
+
+      - uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38  # v2.0.0
+        with:
+          scandir: "./"
+          severity: warning
+
+  docker-test:
+    name: docker test harness (apply safe roles in Ubuntu 24 container)
+    # Skip fork PRs — self-hosted runner must never execute untrusted code.
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Run tests/docker/test.sh apply
+        run: ./tests/docker/test.sh apply
+
+  prewarm-images:
+    # Pre-pull every image referenced by role compose files so the `deploy`
+    # job's `docker_compose_v2` in observability / traefik / apps finds the
+    # layers already on the daemon (same host — compose and prewarm share one
+    # /var/lib/docker). Soft-parallel with lint + docker-test: no `needs:`,
+    # no downstream `needs:` — deploy does NOT block on prewarm. Worst case:
+    # prewarm is slower than the gate, ansible falls back to its own pull.
+    name: prewarm docker images
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Pre-pull compose images
+        run: ./scripts/prewarm-images.sh
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Deploy DAG (push to main). Shape:
+  #
+  #     lint + docker-test ──┐
+  #                          ▼
+  #                    deploy-infra
+  #         (common / wg / ufw / ssh / fail2ban / storage / docker +
+  #          pre-create proxy & observability docker networks)
+  #                          │
+  #     ┌────────────┬───────┴───┬───────────┬──────────┬────────────┐
+  #     ▼            ▼           ▼           ▼          ▼            ▼
+  # deploy-obs  deploy-traefik  deploy-vw  deploy-jf  deploy-st  deploy-homepage
+  #     └────────────┴───────────┴─────┬─────┴──────────┴────────────┘
+  #                                    ▼
+  #                              deploy-backup
+  #                                    │
+  #                                    ▼
+  #                             deploy-finalize
+  #                          (smoke-deploy.sh + ntfy push)
+  #
+  # The six app jobs run in parallel on separate self-hosted runner
+  # instances (`GITHUB_RUNNER_INSTANCES=4` in bootstrap.sh — GH queues the
+  # overflow, no custom gating needed). Precondition
+  # fixes that make this safe:
+  #   - apache2-utils is in common_packages (was inline apt in traefik role)
+  #   - `proxy` + `observability` networks are created at end of docker role
+  # Handler scope was already role-local; no cross-role `notify:` edges.
+  #
+  # Manual workflow_dispatch is served by `deploy-manual` below — a single
+  # sequential job that honours `inputs.tags` / `inputs.check` exactly like
+  # the legacy `deploy` job.
+  # ─────────────────────────────────────────────────────────────────────
+
+  changes:
+    # Per-role change detection. Emits booleans per app bucket; see
+    # scripts/detect-changes.sh. `shared=true` forces every app bucket true
+    # (playbook / group_vars / common role / ci plumbing changes).
+    name: detect changed role buckets
+    needs: [lint, docker-test]
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'schedule'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 3
+    outputs:
+      shared: ${{ steps.detect.outputs.shared }}
+      observability: ${{ steps.detect.outputs.observability }}
+      traefik: ${{ steps.detect.outputs.traefik }}
+      vaultwarden: ${{ steps.detect.outputs.vaultwarden }}
+      jellyfin: ${{ steps.detect.outputs.jellyfin }}
+      syncthing: ${{ steps.detect.outputs.syncthing }}
+      homepage: ${{ steps.detect.outputs.homepage }}
+      backup: ${{ steps.detect.outputs.backup }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          # Need BASE reachable in the clone; push events set event.before but
+          # a shallow clone may not have it. fetch-depth:0 covers force-pushes
+          # and first pushes (where detect-changes.sh falls back to full anyway).
+          fetch-depth: 0
+
+      - name: Detect changes
+        id: detect
+        run: ./scripts/detect-changes.sh "${{ github.event.before }}" "${{ github.sha }}"
+
+  deploy-infra:
+    # Infra always runs on every deploy trigger — covers security-critical
+    # reconverge (ssh, ufw, fail2ban, sysctl) and image-referenced networks
+    # the app jobs depend on. Not change-gated.
+    name: deploy (infra — common/wg/ufw/ssh/fail2ban/storage/docker)
+    needs: [lint, docker-test, changes]
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'schedule'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: common,wireguard,ufw,ssh,fail2ban,storage,docker
+
+  deploy-observability:
+    name: deploy (observability)
+    needs: [deploy-infra, changes]
+    if: >-
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+       || github.event_name == 'schedule')
+      && needs.changes.outputs.observability == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: observability
+
+  deploy-traefik:
+    name: deploy (traefik)
+    needs: [deploy-infra, changes]
+    if: >-
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+       || github.event_name == 'schedule')
+      && needs.changes.outputs.traefik == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: traefik
+
+  deploy-vaultwarden:
+    name: deploy (vaultwarden)
+    needs: [deploy-infra, changes]
+    if: >-
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+       || github.event_name == 'schedule')
+      && needs.changes.outputs.vaultwarden == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: vaultwarden
+
+  deploy-jellyfin:
+    name: deploy (jellyfin)
+    needs: [deploy-infra, changes]
+    if: >-
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+       || github.event_name == 'schedule')
+      && needs.changes.outputs.jellyfin == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: jellyfin
+
+  deploy-syncthing:
+    name: deploy (syncthing)
+    needs: [deploy-infra, changes]
+    if: >-
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+       || github.event_name == 'schedule')
+      && needs.changes.outputs.syncthing == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: syncthing
+
+  deploy-homepage:
+    name: deploy (homepage)
+    needs: [deploy-infra, changes]
+    if: >-
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+       || github.event_name == 'schedule')
+      && needs.changes.outputs.homepage == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: homepage
+
+  deploy-backup:
+    name: deploy (backup)
+    # Runs after any surviving app job. `!failure() && !cancelled()` lets
+    # backup proceed even when some apps were skipped by the change gate —
+    # `needs:` default would cascade-skip it otherwise. backup is small,
+    # idempotent and the last drift-detection net, so always run it on
+    # push-to-main or schedule.
+    needs: [deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-syncthing, deploy-homepage]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: backup
+
+  deploy-finalize:
+    name: deploy (smoke + ntfy notify)
+    # Same skipped-upstream logic as deploy-backup.
+    needs: [deploy-backup]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Refuse to run if not main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::deploy must only run on main; got ${{ github.ref }}"
+            exit 1
+          fi
+
+      - name: Post-deploy smoke checks (local)
+        run: ./scripts/smoke-deploy.sh
+
+      - name: Notify ntfy on successful deploy
+        # Publishes via `docker exec` into the ntfy container on its loopback,
+        # NOT via traefik (runner's SNAT through 172.18.0.1 fails traefik's
+        # wg-only ipAllowList). Soft-fail — ntfy outage covered by the
+        # PushChannelUnreachable alert, deploy itself already succeeded.
+        if: success()
+        run: |
+          set -euo pipefail
+          ntfy_container=$(docker ps \
+            --filter "label=com.docker.compose.project=observability" \
+            --filter "label=com.docker.compose.service=ntfy" \
+            --format '{{.Names}}' | head -1)
+          if [ -z "${ntfy_container:-}" ]; then
+            echo "::warning::ntfy container not running — skipping deploy notification"
+            exit 0
+          fi
+          sha_short=$(git rev-parse --short HEAD)
+          subject=$(git log -1 --format=%s)
+          body="${sha_short} by ${{ github.actor }} — ${subject}"
+          docker exec -i "$ntfy_container" wget -q -O- \
+            --timeout=10 \
+            --header="Title: Homelab deploy ✓" \
+            --header="Priority: 3" \
+            --header="Tags: rocket,white_check_mark" \
+            --header="Click: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}" \
+            --post-data="$body" \
+            "http://localhost:80/homelab-deploy" >/dev/null \
+            || echo "::warning::ntfy notify failed (deploy succeeded — check observability-ntfy)"
+
+  deploy-manual:
+    name: ansible-playbook (manual workflow_dispatch — single sequential job)
+    needs: [lint, docker-test]
+    # Manual dispatch only. The push-to-main path uses the DAG above.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Refuse to run if not main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::deploy must only run on main; got ${{ github.ref }}"
+            exit 1
+          fi
+
+      - name: Install Ansible collections
+        working-directory: ansible
+        env:
+          ANSIBLE_COLLECTIONS_PATH: /opt/gha-cache/ansible-collections
+        run: |
+          mkdir -p /opt/gha-cache/ansible-collections
+          flock /opt/gha-cache/ansible-collections/.lock \
+            ansible-galaxy install -r requirements.yml
+
+      - name: Override inventory for local run
+        run: |
+          cat > ansible/inventory.ci.yml <<'EOF'
+          ---
+          all:
+            children:
+              homelab_servers:
+                hosts:
+                  homelab:
+                    ansible_connection: local
+          EOF
+
+      - name: ansible-playbook
+        working-directory: ansible
+        env:
+          ANSIBLE_COLLECTIONS_PATH: /opt/gha-cache/ansible-collections
+          ANSIBLE_CACHE_PLUGIN_CONNECTION: /opt/gha-cache/ansible-facts
+        run: |
+          ARGS=()
+          if [ -n "${{ inputs.tags }}" ]; then
+            ARGS+=(--tags "${{ inputs.tags }}")
+          fi
+          if [ "${{ inputs.check }}" = "true" ]; then
+            ARGS+=(--check --diff)
+          fi
+          ansible-playbook \
+            --force-handlers \
+            -i inventory.ci.yml \
+            playbooks/site.yml \
+            "${ARGS[@]}"
+
+      - name: Post-deploy smoke checks (local)
+        if: inputs.check != 'true'
+        run: ./scripts/smoke-deploy.sh

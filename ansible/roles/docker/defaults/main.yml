@@ -1,0 +1,9 @@
+---
+# Docker Engine GPG key fingerprint — verified after download.
+# Source: https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository
+docker_gpg_fingerprint: "9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+
+# docker-rollout CLI plugin — zero-downtime per-service swap helper.
+# Releases: https://github.com/Wowu/docker-rollout/releases
+docker_rollout_version: "v0.13"
+docker_rollout_sha256: "fa0df004de84747142cb627c55210aaa914bbae76666e7b95a2ac46805d81a84"

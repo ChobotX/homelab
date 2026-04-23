@@ -1,0 +1,17 @@
+[Unit]
+Description=Home Assistant backup freshness exporter (managed by Ansible)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ha-backup-freshness.sh
+Nice=19
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/node_exporter/textfile
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

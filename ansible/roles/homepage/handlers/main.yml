@@ -1,0 +1,8 @@
+---
+# Config files are bind-mounted read-only, so a compose-spec change isn't
+# enough on its own — force a recreate so new env/config gets loaded.
+- name: Swap homepage service
+  ansible.builtin.command:
+    chdir: /opt/homepage
+    cmd: docker compose up -d --wait --no-deps --force-recreate homepage
+  changed_when: true

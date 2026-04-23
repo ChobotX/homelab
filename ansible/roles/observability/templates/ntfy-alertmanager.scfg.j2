@@ -1,0 +1,64 @@
+# Managed by Ansible. Bridge between Alertmanager webhooks and ntfy.
+# Format: scfg (https://git.sr.ht/~emersion/scfg).
+#
+# Alertmanager POSTs grouped alerts here; the bridge publishes one ntfy
+# message per group (alert-mode multi) to {{ observability_ntfy_topic }}.
+
+http-address :8080
+log-level info
+log-format text
+
+# Basic auth for the Alertmanager → bridge hop. AM is configured with matching
+# basic_auth on its webhook_config. Not a strong boundary (both sides live on
+# the observability docker network) but stops accidental unauthenticated POSTs
+# if the bridge ever gets exposed.
+user {{ observability_ntfy_bridge_webhook_user }}
+password {{ ntfy_bridge_webhook_password }}
+
+# Group all alerts in a single Alertmanager notification into one ntfy message.
+# Alertmanager already groups by [alertname, severity] upstream.
+alert-mode multi
+
+# Map severity labels → ntfy priority + tags. Decreasing precedence: labels
+# higher in `order` win ties.
+labels {
+    order "severity"
+
+    severity "critical" {
+        priority 5
+        tags "rotating_light"
+    }
+
+    severity "warning" {
+        priority 4
+        tags "warning"
+    }
+
+    severity "info" {
+        priority 2
+        tags "information_source"
+    }
+}
+
+# Update the same notification when the alert resolves, instead of posting a
+# second message — keeps the phone tidy.
+resolved {
+    update-notification true
+    tags "white_check_mark"
+    priority 2
+}
+
+ntfy {
+    # Internal DNS on the observability network. Anonymous publish — topic is
+    # open for rw to `*` in server.yml (see ntfy-server.yml.j2 note).
+    server http://ntfy
+    topic {{ observability_ntfy_topic }}
+    markdown true
+}
+
+alertmanager {
+    # Override the URL the bridge extracts from the webhook payload. Alerts
+    # come from alertmanager:9093 on the same network; that's not reachable
+    # for the Silence action either, so we point at the public URL.
+    url https://{{ observability_alertmanager_host }}
+}

@@ -1,0 +1,134 @@
+---
+# Main site playbook — applies everything to the homelab host.
+#
+# Role order is intentional — prevents self-lockout and respects bootstrap deps:
+#   common         → base packages, log caps, auto security updates
+#   wireguard      → manage wg0.conf (never touches privatekey)
+#   ufw            → firewall BEFORE sshd re-tightening (avoid lockout from dropped rules)
+#   ssh_hardening  → final sshd config
+#   fail2ban       → needs sshd + ufw
+#   storage        → /mnt/elements + bind mounts (runs before docker so compose
+#                    stacks see bind-mounted /opt/*/data|logs paths from boot)
+#   docker         → engine + compose + daemon.json
+#   observability  → LGTMT stack (runs before traefik so `observability` network exists)
+#   traefik        → reverse proxy, bound to wg0 IP, Cloudflare DNS-01, OTLP → tempo
+#   vaultwarden    → secret vault behind Traefik
+#   jellyfin       → media server behind Traefik (HW transcode if /dev/dri present)
+#   syncthing      → remote media ingest (sync protocol bound to WG IP)
+#   homepage       → signpost page at home.<homelab_domain> (links + live widgets)
+#   backup         → restic systemd timer (last, so backup sees steady state)
+
+- name: Configure homelab
+  hosts: homelab_servers
+  become: true
+  gather_facts: true
+
+  # Host-truth + credentials live on the box under /etc/homelab/.
+  # Bootstrap writes them once; nothing sensitive ever enters git.
+  # We slurp from the target (not the controller) so the playbook works
+  # whether Ansible runs on-box (self-hosted runner) or from a laptop over SSH.
+
+  vars:
+    # Secrets that bootstrap writes and downstream roles slurp.
+    # Bootstrap generates the internal passwords (vaultwarden/restic/grafana)
+    # as root at first run — see bootstrap.sh gen_secret_if_missing.
+    homelab_secret_names:
+      - cloudflare_dns01_token
+      - traefik_dashboard_password
+      - restic_sftp_private_key
+      - homeassistant_metrics_token
+      - alertmanager_smtp_password
+      - ntfy_bridge_webhook_password
+      - vaultwarden_admin_token
+      - restic_password
+      - grafana_admin_password
+
+  # pre_tasks are tagged `always` so they fire even with --tags <role>.
+  pre_tasks:
+    - name: Read host config from /etc/homelab/config.yml on target
+      ansible.builtin.slurp:
+        src: /etc/homelab/config.yml
+      register: homelab_config_slurp
+      tags: [always]
+
+    - name: Parse host config into a dict
+      ansible.builtin.set_fact:
+        homelab_config: "{{ homelab_config_slurp.content | b64decode | from_yaml }}"
+      tags: [always]
+
+    - name: Apply each config key as a play var
+      ansible.builtin.set_fact:
+        "{{ item.key }}": "{{ item.value }}"
+      loop: "{{ homelab_config | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      tags: [always]
+
+    - name: Read secret files from target (missing files are OK)
+      ansible.builtin.slurp:
+        src: "/etc/homelab/secrets/{{ item }}"
+      loop: "{{ homelab_secret_names }}"
+      register: homelab_secrets_slurp
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Apply each secret as a play var (trim trailing newlines)
+      ansible.builtin.set_fact:
+        "{{ item.item }}": "{{ (item.content | default('') | b64decode).strip() }}"
+      loop: "{{ homelab_secrets_slurp.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.content is defined
+      no_log: true
+      tags: [always]
+
+    - name: Default any missing optional secrets to empty string
+      ansible.builtin.set_fact:
+        "{{ item }}": "{{ vars[item] | default('') }}"
+      loop: "{{ homelab_secret_names }}"
+      no_log: true
+      tags: [always]
+
+    # Presence of /usr/bin/nvidia-smi IS the truth — no manual flag to drift.
+    # Overrides anything slurped from config.yml so hardware drives the gate.
+    - name: Detect NVIDIA GPU via nvidia-smi
+      ansible.builtin.stat:
+        path: /usr/bin/nvidia-smi
+      register: nvidia_smi_stat
+      tags: [always]
+
+    - name: Set nvidia_gpu_enabled from nvidia-smi presence
+      ansible.builtin.set_fact:
+        nvidia_gpu_enabled: "{{ nvidia_smi_stat.stat.exists }}"
+      tags: [always]
+
+  roles:
+    - role: common
+      tags: [common, base]
+    - role: wireguard
+      tags: [wireguard, network]
+    - role: ufw
+      tags: [ufw, firewall]
+    - role: ssh_hardening
+      tags: [ssh, hardening]
+    - role: fail2ban
+      tags: [fail2ban, hardening]
+    - role: storage
+      tags: [storage, base]
+    - role: docker
+      tags: [docker]
+    - role: observability
+      tags: [observability, services]
+    - role: traefik
+      tags: [traefik, proxy]
+    - role: vaultwarden
+      tags: [vaultwarden, services]
+    - role: jellyfin
+      tags: [jellyfin, media, services]
+    - role: syncthing
+      tags: [syncthing, media, services]
+    - role: homepage
+      tags: [homepage, services]
+    - role: backup
+      tags: [backup]

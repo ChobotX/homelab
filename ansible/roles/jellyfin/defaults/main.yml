@@ -1,0 +1,9 @@
+---
+jellyfin_image: "jellyfin/jellyfin:10.10.7@sha256:7ae36aab93ef9b6aaff02b37f8bb23df84bb2d7a3f6054ec8fc466072a648ce2"
+jellyfin_host: "jellyfin.{{ homelab_domain }}"
+# Library root — bind-mounted read-only into the container. Syncthing writes
+# into $jellyfin_media_root/incoming; the user promotes into movies|tv|music.
+jellyfin_media_root: /opt/media
+# In-container tmpfs size for transcode scratch. Spares HDD + survives restart
+# clean. 2 GiB covers one 4K→1080p passthrough; bump if multi-stream.
+jellyfin_transcode_tmpfs_size: "2g"

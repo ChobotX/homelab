@@ -1,0 +1,146 @@
+---
+- name: Ensure APT cache is fresh
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Ensure locale is generated
+  community.general.locale_gen:
+    name: "{{ locale }}"
+    state: present
+
+- name: Ensure journald drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Drop journald override with retention caps
+  # Storage=persistent is Ubuntu 24 default — only size / retention are our policy.
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/retention.conf
+    mode: "0644"
+    owner: root
+    group: root
+    content: |
+      [Journal]
+      SystemMaxUse={{ common_journald_system_max_use }}
+      MaxRetentionSec={{ common_journald_max_retention_sec }}
+  notify: Restart journald
+
+- name: Install unattended-upgrades
+  ansible.builtin.apt:
+    name: "{{ ['unattended-upgrades']
+              + (['apt-listchanges'] if common_unattended_upgrades_mail | length > 0 else []) }}"
+    state: present
+
+- name: Configure unattended-upgrades
+  ansible.builtin.template:
+    src: 50unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    mode: "0644"
+    owner: root
+    group: root
+
+- name: Enable periodic APT checks
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: "0644"
+    owner: root
+    group: root
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+
+# Weekly full apt cache purge — APT::Periodic::AutocleanInterval only removes
+# superseded .debs; current versions stay and accumulate (1.5G+ on first
+# inspection of the homelab). apt-get clean nukes /var/cache/apt/archives
+# entirely. Safe to re-download anything later if needed.
+
+- name: Deploy apt-clean systemd service unit
+  ansible.builtin.copy:
+    src: apt-clean.service
+    dest: /etc/systemd/system/apt-clean.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Deploy apt-clean systemd timer unit
+  ansible.builtin.copy:
+    src: apt-clean.timer
+    dest: /etc/systemd/system/apt-clean.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start apt-clean timer
+  ansible.builtin.systemd:
+    name: apt-clean.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Apply baseline sysctl hardening
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_file: /etc/sysctl.d/90-homelab-hardening.conf
+    sysctl_set: true
+    reload: true
+  loop:
+    # Reject packets with impossible source addresses (spoofed traffic).
+    - { name: net.ipv4.conf.all.rp_filter, value: "1" }
+    - { name: net.ipv4.conf.default.rp_filter, value: "1" }
+    # SYN flood mitigation.
+    - { name: net.ipv4.tcp_syncookies, value: "1" }
+    # Ignore ICMP redirects — common MITM vector on untrusted LANs.
+    - { name: net.ipv4.conf.all.accept_redirects, value: "0" }
+    - { name: net.ipv4.conf.default.accept_redirects, value: "0" }
+    - { name: net.ipv6.conf.all.accept_redirects, value: "0" }
+    - { name: net.ipv6.conf.default.accept_redirects, value: "0" }
+    # No source-routed packets (ancient attack).
+    - { name: net.ipv4.conf.all.accept_source_route, value: "0" }
+    - { name: net.ipv4.conf.default.accept_source_route, value: "0" }
+    # Log unusual packets (e.g. Martians).
+    - { name: net.ipv4.conf.all.log_martians, value: "1" }
+    - { name: net.ipv4.conf.default.log_martians, value: "1" }
+    # Ignore ICMP broadcast (smurf attack mitigation).
+    - { name: net.ipv4.icmp_echo_ignore_broadcasts, value: "1" }
+    # Hide kernel pointers in /proc — harder for local privesc via info leak.
+    - { name: kernel.kptr_restrict, value: "2" }
+    # Restrict dmesg to privileged users.
+    - { name: kernel.dmesg_restrict, value: "1" }
+    # Disable the magic-SysRq key except for sync.
+    - { name: kernel.sysrq, value: "4" }
+  # Skip in containers — they share the host kernel's sysctls and most are
+  # read-only from inside a container. Real hosts MUST apply all of these, so
+  # we skip cleanly instead of swallowing errors and hiding regressions.
+  when: ansible_virtualization_type not in ['docker', 'lxc', 'container']
+
+- name: Ensure systemd-timesyncd package is present
+  ansible.builtin.apt:
+    name: systemd-timesyncd
+    state: present
+  when: ansible_virtualization_type not in ['docker', 'lxc', 'container']
+
+- name: Ensure NTP is active (systemd-timesyncd)
+  ansible.builtin.systemd:
+    name: systemd-timesyncd
+    state: started
+    enabled: true
+  when: ansible_virtualization_type not in ['docker', 'lxc', 'container']

@@ -1,0 +1,14 @@
+[Unit]
+Description=Safe weekly Docker image + build cache prune (managed by Ansible)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/docker-prune.sh
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

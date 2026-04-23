@@ -1,0 +1,24 @@
+{# Managed by Ansible — renders homepage_services (+ _extra) into services.yaml. #}
+{% for group in homepage_services + homepage_services_extra %}
+- {{ group.group }}:
+{% for svc in group['items'] %}
+    - {{ svc.name }}:
+        href: {{ svc.href }}
+        icon: {{ svc.icon }}
+{% if svc.description is defined %}
+        description: {{ svc.description }}
+{% endif %}
+{% if svc.siteMonitor is defined %}
+        siteMonitor: {{ svc.siteMonitor }}
+{% endif %}
+{% if svc.ping is defined %}
+        ping: {{ svc.ping }}
+{% endif %}
+{% if svc.widget is defined %}
+        widget:
+{% for k, v in svc.widget.items() %}
+          {{ k }}: {{ v }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endfor %}

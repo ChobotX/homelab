@@ -1,0 +1,92 @@
+---
+# One handler per service — only the services whose inputs actually changed
+# get swapped. `--force-recreate` is required because most configs are
+# bind-mounted (loki-config.yml, tempo-config.yml, alloy-config.alloy, …);
+# without it compose sees no service-spec diff and skips the restart even
+# though the file on disk changed. `--wait` then blocks until the new
+# container's healthcheck is green, so Traefik's active loadbalancer
+# healthcheck has a clean pivot point.
+#
+# Grafana dashboard JSONs auto-reload via the file provider (see
+# grafana-dashboards.yml.j2 `updateIntervalSeconds: 30`) so they don't
+# notify any handler.
+
+- name: Swap grafana service
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker compose up -d --wait --no-deps --force-recreate grafana
+  changed_when: true
+
+- name: Swap prometheus service
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker compose up -d --wait --no-deps --force-recreate prometheus
+  changed_when: true
+
+- name: Swap loki service
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker compose up -d --wait --no-deps --force-recreate loki
+  changed_when: true
+
+- name: Swap tempo service
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker compose up -d --wait --no-deps --force-recreate tempo
+  changed_when: true
+
+- name: Swap alloy service
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker compose up -d --wait --no-deps --force-recreate alloy
+  changed_when: true
+
+- name: Swap blackbox_exporter service
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker compose up -d --wait --no-deps --force-recreate blackbox_exporter
+  changed_when: true
+
+# Tier B — alertmanager supports clustering and tolerates brief double-read,
+# so blue/green via `docker rollout` gives true zero-downtime: scale to 2,
+# wait new healthy, drain old, scale back to 1.
+- name: Rollout alertmanager
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker rollout alertmanager
+  changed_when: true
+
+# ntfy is user-facing (phone subscribers hang on long-polling GETs to
+# /v1/<topic>/subscribe) — drop-and-recreate would flap every subscription.
+# docker-rollout + Traefik's active healthcheck give a clean swap: new
+# container reaches /v1/health green, Traefik pivots, old drains.
+- name: Rollout ntfy
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker rollout ntfy
+  changed_when: true
+
+# Bridge is stateless and internal-only. A brief ~3s gap during force-recreate
+# only matters if Alertmanager tries to deliver a webhook in that window —
+# AM retries on failure, and the worst case is the meta-alert catching it.
+- name: Swap ntfy_alertmanager service
+  ansible.builtin.command:
+    chdir: /opt/observability
+    cmd: docker compose up -d --wait --no-deps --force-recreate ntfy_alertmanager
+  changed_when: true
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart nvidia-gpu-exporter
+  ansible.builtin.systemd:
+    name: nvidia-gpu-exporter.service
+    state: restarted
+    daemon_reload: true
+
+- name: Restart node-exporter
+  ansible.builtin.systemd:
+    name: node-exporter.service
+    state: restarted
+    daemon_reload: true
