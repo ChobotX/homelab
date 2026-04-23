@@ -2,3 +2,9 @@
 #   <commit_sha>:<path>:<rule_id>:<line>
 #
 # Each entry needs a short reason in a trailing comment.
+
+# Pre-squash backup branch (backup/pre-squash) carries the original
+# ntfy curl-auth-user false positive ($(...) shell substitution, not a
+# literal secret). Main history was rewritten; keep the fingerprint so
+# gitleaks stays green while the backup branch exists locally.
+396c44f79843bda6bf768950b2c0a5423c6a74b5:docs/bootstrap.md:curl-auth-user:119

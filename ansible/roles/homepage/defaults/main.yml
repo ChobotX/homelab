@@ -39,18 +39,15 @@ homepage_services:
         # the green/red dot. Live alert count would need prometheusmetric
         # against `ALERTS{alertstate="firing"}`; deferred.
         siteMonitor: "http://alertmanager:9093/-/ready"
-      - name: Traefik
-        href: "https://{{ traefik_dashboard_host }}"
-        icon: traefik.svg
-        description: Reverse proxy
-        # Traefik API requires basic-auth (dashboard-auth@file). Skip the
-        # widget and keep siteMonitor for the green/red status dot.
-        siteMonitor: "http://traefik:8082/ping"
+  - group: Services
+    items:
       - name: Vaultwarden
         href: "https://{{ vaultwarden_host }}"
         icon: vaultwarden.svg
         description: Password vault
         siteMonitor: "http://vaultwarden:80/alive"
+  - group: Raspberry Pi
+    items:
       - name: Home Assistant
         href: "https://{{ traefik_homeassistant_host }}"
         icon: home-assistant.svg
