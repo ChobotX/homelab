@@ -31,14 +31,6 @@ homepage_services:
           # tight (no inner spaces) so we keep it that way even though
           # ansible-lint's jinja[spacing] would prefer spaces here.
           password: !unsafe "{{HOMEPAGE_VAR_GRAFANA_PASSWORD}}"  # noqa: jinja[spacing]
-      - name: Alertmanager
-        href: "https://alertmanager.{{ homelab_domain }}"
-        icon: prometheus.svg
-        description: Alert routing
-        # Homepage has no dedicated alertmanager widget — siteMonitor gives
-        # the green/red dot. Live alert count would need prometheusmetric
-        # against `ALERTS{alertstate="firing"}`; deferred.
-        siteMonitor: "http://alertmanager:9093/-/ready"
   - group: Services
     items:
       - name: Vaultwarden
