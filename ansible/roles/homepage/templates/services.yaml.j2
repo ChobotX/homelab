@@ -1,24 +1,34 @@
-{# Managed by Ansible — renders homepage_services (+ _extra) into services.yaml. #}
-{% for group in homepage_services + homepage_services_extra %}
+{# Managed by Ansible — renders homepage_services (+ _extra) into services.yaml.
+   Supports nested subgroups (2 levels). #}
+{% macro render_svc(svc, indent) -%}
+{{ ' ' * indent }}- {{ svc.name }}:
+{{ ' ' * (indent + 4) }}href: {{ svc.href }}
+{{ ' ' * (indent + 4) }}icon: {{ svc.icon }}
+{% if svc.description is defined -%}
+{{ ' ' * (indent + 4) }}description: {{ svc.description }}
+{% endif -%}
+{% if svc.siteMonitor is defined -%}
+{{ ' ' * (indent + 4) }}siteMonitor: {{ svc.siteMonitor }}
+{% endif -%}
+{% if svc.ping is defined -%}
+{{ ' ' * (indent + 4) }}ping: {{ svc.ping }}
+{% endif -%}
+{% if svc.widget is defined -%}
+{{ ' ' * (indent + 4) }}widget:
+{% for k, v in svc.widget.items() -%}
+{{ ' ' * (indent + 6) }}{{ k }}: {{ v }}
+{% endfor -%}
+{% endif -%}
+{%- endmacro -%}
+{% for group in homepage_services + homepage_services_extra -%}
 - {{ group.group }}:
-{% for svc in group['items'] %}
-    - {{ svc.name }}:
-        href: {{ svc.href }}
-        icon: {{ svc.icon }}
-{% if svc.description is defined %}
-        description: {{ svc.description }}
-{% endif %}
-{% if svc.siteMonitor is defined %}
-        siteMonitor: {{ svc.siteMonitor }}
-{% endif %}
-{% if svc.ping is defined %}
-        ping: {{ svc.ping }}
-{% endif %}
-{% if svc.widget is defined %}
-        widget:
-{% for k, v in svc.widget.items() %}
-          {{ k }}: {{ v }}
-{% endfor %}
-{% endif %}
-{% endfor %}
-{% endfor %}
+{% for svc in group['items'] | default([]) -%}
+{{ render_svc(svc, 4) }}
+{%- endfor -%}
+{% for sub in group.subgroups | default([]) -%}
+    - {{ sub.group }}:
+{% for svc in sub['items'] -%}
+{{ render_svc(svc, 8) }}
+{%- endfor -%}
+{%- endfor -%}
+{% endfor -%}
