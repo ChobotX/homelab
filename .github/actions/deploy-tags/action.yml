@@ -3,10 +3,12 @@ name: deploy-tags
 description: >-
   Install ansible collections, write the local-convergence inventory, and run
   ansible-playbook with the given --tags filter on the self-hosted runner.
-  Used by every job in the deploy DAG (deploy-infra, deploy-observability,
-  deploy-traefik, deploy-vaultwarden, deploy-homepage, deploy-backup) and by
-  the manual workflow_dispatch fallback (deploy-manual). Checkout must happen
-  in the caller — composite actions run in the parent repo's workspace.
+  Used by every job in the deploy DAG (deploy-common, deploy-wireguard,
+  deploy-ufw, deploy-ssh, deploy-fail2ban, deploy-storage, deploy-docker,
+  deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin,
+  deploy-syncthing, deploy-homepage, deploy-backup) and by the manual
+  workflow_dispatch fallback (deploy-manual). Checkout must happen in the
+  caller — composite actions run in the parent repo's workspace.
 
 inputs:
   tags:

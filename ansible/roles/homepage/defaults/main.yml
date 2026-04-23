@@ -54,6 +54,15 @@ homepage_services:
         icon: syncthing.svg
         description: Media upload & sync
         siteMonitor: "http://syncthing:8384/rest/noauth/health"
+# Per-instance additions (external PaaS, uptime pages, WG hub). Set in
+# /etc/homelab/config.yml; defaults to empty so no real URLs ship in git.
+homepage_services_extra: []
+
+# Groups appended AFTER _extra — lets the template push standalone nodes
+# (different physical hardware) past an extras row that creates a visual
+# break in the CSS grid flow. Raspberry Pi sits here so Hetzner's 3-tile
+# row wraps and RPi starts on a fresh row.
+homepage_services_tail:
   - group: Raspberry Pi
     items:
       - name: Home Assistant
@@ -69,10 +78,6 @@ homepage_services:
           url: "http://{{ homeassistant_host | default('') }}"
           key: !unsafe "{{HOMEPAGE_VAR_HA_TOKEN}}"  # noqa: jinja[spacing]
           fields: "[\"people_home\", \"lights_on\", \"switches_on\"]"
-
-# Per-instance additions (external PaaS, uptime pages, WG hub). Set in
-# /etc/homelab/config.yml; defaults to empty so no real URLs ship in git.
-homepage_services_extra: []
 
 # Extra top-of-page info widgets.
 homepage_widgets_extra: []

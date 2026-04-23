@@ -1,5 +1,5 @@
 {# Managed by Ansible — renders homepage_services into Homepage's services.yaml format. #}
-{% for group in homepage_services + homepage_services_extra %}
+{% for group in homepage_services + homepage_services_extra + homepage_services_tail %}
 - {{ group.group }}:
 {% for svc in group['items'] %}
     - {{ svc.name }}:
