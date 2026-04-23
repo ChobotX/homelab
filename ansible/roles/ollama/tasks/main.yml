@@ -28,18 +28,24 @@
     mode: "0644"
   notify: Swap ollama service
 
+# Flush handlers BEFORE the safety-net up-task so any template change recreates
+# the container via `--force-recreate`. With the reverse order (vaultwarden
+# pattern), a stale/broken container from a previous failed deploy would be
+# "Start"-ed with its old config-hash by compose-up, hit the same failure
+# again, and the handler never fires. Ollama's runtime-coupled config
+# (GPU flags, models) makes this more likely than for plain HTTP services.
+- name: Apply any pending service swap before bring-up
+  ansible.builtin.meta: flush_handlers
+
 - name: Bring up Ollama stack
-  # First-deploy safety net. `recreate: never` leaves running containers
-  # untouched on compose/image changes so the per-service handler owns every
-  # swap (with its --wait gate).
+  # Safety net: brings the container up if no template changed (handler
+  # didn't fire) but the container was missing. Idempotent no-op when the
+  # handler just did the --force-recreate.
   community.docker.docker_compose_v2:
     project_src: /opt/ollama
     state: present
     pull: policy
     recreate: never
-
-- name: Flush handlers so a newly-templated compose is applied before model pull
-  ansible.builtin.meta: flush_handlers
 
 - name: List models already present on this host
   # Parse `ollama list` output so the pull step is a no-op when the model is
