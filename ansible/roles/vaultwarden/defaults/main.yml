@@ -1,7 +1,9 @@
 ---
 vaultwarden_image: "vaultwarden/server:1.35.7@sha256:9a8eec71f4a52411cc43edc7a50f33e9b6f62b5baca0dd95f0c6e7fd60f1a341"
 vaultwarden_host: "vault.{{ homelab_domain }}"
-# Temporary: flipped on so the first account can register. Flip back to
-# false once registered (push a commit reverting this line).
-vaultwarden_signups_allowed: true
+# Public self-signup disabled. New users onboard via admin-issued invites
+# from the /admin panel — INVITATIONS_ALLOWED stays on so the admin UI can
+# mint invite links. No SMTP is configured, so /admin displays the invite
+# URL inline after clicking "Invite"; share that link out-of-band.
+vaultwarden_signups_allowed: false
 vaultwarden_invitations_allowed: true
