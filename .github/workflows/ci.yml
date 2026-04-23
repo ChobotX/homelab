@@ -162,9 +162,17 @@ jobs:
   #
   #     lint + docker-test ──┐
   #                          ▼
-  #                    deploy-infra
-  #         (common / wg / ufw / ssh / fail2ban / storage / docker +
-  #          pre-create proxy & observability docker networks)
+  #                       changes
+  #                          │
+  #                    deploy-common
+  #         ┌──────┬────────┬──┴────┬────────┬────────┐
+  #         ▼      ▼        ▼       ▼        ▼        ▼
+  #        wg     ssh     f2b   storage   docker     (ufw needs wg)
+  #         │
+  #         └────► deploy-ufw
+  #
+  #     (all infra jobs change-gated; !failure() && !cancelled() lets a
+  #      skipped upstream not cascade-skip downstream)
   #                          │
   #     ┌────────────┬───────┴───┬───────────┬──────────┬────────────┐
   #     ▼            ▼           ▼           ▼          ▼            ▼
@@ -177,10 +185,11 @@ jobs:
   #                             deploy-finalize
   #                          (smoke-deploy.sh + ntfy push)
   #
-  # The six app jobs run in parallel on separate self-hosted runner
-  # instances (`GITHUB_RUNNER_INSTANCES=4` in bootstrap.sh — GH queues the
-  # overflow, no custom gating needed). Precondition
-  # fixes that make this safe:
+  # Every deploy job is change-gated; weekly schedule force-fulls via
+  # detect-changes.sh. Infra jobs run in parallel after deploy-common (ufw
+  # serialises behind wireguard — rules reference the WG iface). App jobs
+  # run in parallel on separate self-hosted runner instances
+  # (`GITHUB_RUNNER_INSTANCES=4` in bootstrap.sh). Precondition fixes:
   #   - apache2-utils is in common_packages (was inline apt in traefik role)
   #   - `proxy` + `observability` networks are created at end of docker role
   # Handler scope was already role-local; no cross-role `notify:` edges.
@@ -203,6 +212,13 @@ jobs:
     timeout-minutes: 3
     outputs:
       shared: ${{ steps.detect.outputs.shared }}
+      common: ${{ steps.detect.outputs.common }}
+      wireguard: ${{ steps.detect.outputs.wireguard }}
+      ufw: ${{ steps.detect.outputs.ufw }}
+      ssh: ${{ steps.detect.outputs.ssh }}
+      fail2ban: ${{ steps.detect.outputs.fail2ban }}
+      storage: ${{ steps.detect.outputs.storage }}
+      docker: ${{ steps.detect.outputs.docker }}
       observability: ${{ steps.detect.outputs.observability }}
       traefik: ${{ steps.detect.outputs.traefik }}
       vaultwarden: ${{ steps.detect.outputs.vaultwarden }}
@@ -222,31 +238,144 @@ jobs:
         id: detect
         run: ./scripts/detect-changes.sh "${{ github.event.before }}" "${{ github.sha }}"
 
-  deploy-infra:
-    # Infra always runs on every deploy trigger — covers security-critical
-    # reconverge (ssh, ufw, fail2ban, sysctl) and image-referenced networks
-    # the app jobs depend on. Not change-gated.
-    name: deploy (infra — common/wg/ufw/ssh/fail2ban/storage/docker)
+  deploy-common:
+    # base pkgs/users/paths — gate for every other infra role. Weekly
+    # schedule force-fulls to heal any host-side drift.
+    name: deploy (common)
     needs: [lint, docker-test, changes]
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || github.event_name == 'schedule'
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+       || github.event_name == 'schedule')
+      && needs.changes.outputs.common == 'true'
     runs-on: [self-hosted, linux, homelab]
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ github.sha }}
       - uses: ./.github/actions/deploy-tags
         with:
-          tags: common,wireguard,ufw,ssh,fail2ban,storage,docker
+          tags: common
+
+  deploy-wireguard:
+    name: deploy (wireguard)
+    needs: [deploy-common, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.wireguard == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: wireguard
+
+  deploy-ufw:
+    # Rules reference the WG iface — serialise behind wireguard so a fresh
+    # reconverge of both lands in order.
+    name: deploy (ufw)
+    needs: [deploy-common, deploy-wireguard, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.ufw == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: ufw
+
+  deploy-ssh:
+    name: deploy (ssh)
+    needs: [deploy-common, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.ssh == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: ssh
+
+  deploy-fail2ban:
+    name: deploy (fail2ban)
+    needs: [deploy-common, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.fail2ban == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: fail2ban
+
+  deploy-storage:
+    name: deploy (storage)
+    needs: [deploy-common, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.storage == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: storage
+
+  deploy-docker:
+    # Creates `proxy` + `observability` networks the app compose stacks
+    # attach to — apps gate on this job's completion (skipped-OK).
+    name: deploy (docker)
+    needs: [deploy-common, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.docker == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: docker
 
   deploy-observability:
     name: deploy (observability)
-    needs: [deploy-infra, changes]
+    needs: [deploy-docker, deploy-ufw, changes]
     if: >-
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
-       || github.event_name == 'schedule')
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
       && needs.changes.outputs.observability == 'true'
     runs-on: [self-hosted, linux, homelab]
     timeout-minutes: 15
@@ -260,10 +389,11 @@ jobs:
 
   deploy-traefik:
     name: deploy (traefik)
-    needs: [deploy-infra, changes]
+    needs: [deploy-docker, deploy-ufw, changes]
     if: >-
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
-       || github.event_name == 'schedule')
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
       && needs.changes.outputs.traefik == 'true'
     runs-on: [self-hosted, linux, homelab]
     timeout-minutes: 10
@@ -277,10 +407,11 @@ jobs:
 
   deploy-vaultwarden:
     name: deploy (vaultwarden)
-    needs: [deploy-infra, changes]
+    needs: [deploy-docker, deploy-ufw, changes]
     if: >-
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
-       || github.event_name == 'schedule')
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
       && needs.changes.outputs.vaultwarden == 'true'
     runs-on: [self-hosted, linux, homelab]
     timeout-minutes: 10
@@ -294,10 +425,11 @@ jobs:
 
   deploy-jellyfin:
     name: deploy (jellyfin)
-    needs: [deploy-infra, changes]
+    needs: [deploy-docker, deploy-ufw, changes]
     if: >-
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
-       || github.event_name == 'schedule')
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
       && needs.changes.outputs.jellyfin == 'true'
     runs-on: [self-hosted, linux, homelab]
     timeout-minutes: 15
@@ -311,10 +443,11 @@ jobs:
 
   deploy-syncthing:
     name: deploy (syncthing)
-    needs: [deploy-infra, changes]
+    needs: [deploy-docker, deploy-ufw, changes]
     if: >-
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
-       || github.event_name == 'schedule')
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
       && needs.changes.outputs.syncthing == 'true'
     runs-on: [self-hosted, linux, homelab]
     timeout-minutes: 10
@@ -328,10 +461,11 @@ jobs:
 
   deploy-homepage:
     name: deploy (homepage)
-    needs: [deploy-infra, changes]
+    needs: [deploy-docker, deploy-ufw, changes]
     if: >-
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
-       || github.event_name == 'schedule')
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
       && needs.changes.outputs.homepage == 'true'
     runs-on: [self-hosted, linux, homelab]
     timeout-minutes: 10
@@ -347,14 +481,14 @@ jobs:
     name: deploy (backup)
     # Runs after any surviving app job. `!failure() && !cancelled()` lets
     # backup proceed even when some apps were skipped by the change gate —
-    # `needs:` default would cascade-skip it otherwise. backup is small,
-    # idempotent and the last drift-detection net, so always run it on
-    # push-to-main or schedule.
-    needs: [deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-syncthing, deploy-homepage]
+    # `needs:` default would cascade-skip it otherwise. Gated on
+    # changes.backup; weekly schedule force-fulls to heal drift.
+    needs: [deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-syncthing, deploy-homepage, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
           || github.event_name == 'schedule')
+      && needs.changes.outputs.backup == 'true'
     runs-on: [self-hosted, linux, homelab]
     timeout-minutes: 10
     steps:

@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # Categorize changed files between BASE..HEAD into role-buckets so the deploy
-# DAG can skip unchanged app roles.
+# DAG can skip unchanged roles.
 #
 # Buckets (written to $GITHUB_OUTPUT):
-#   observability / traefik / vaultwarden / jellyfin / syncthing / homepage / backup — per-role
+#   common / wireguard / ufw / ssh / fail2ban / storage / docker — infra per-role
+#   observability / traefik / vaultwarden / jellyfin / syncthing / homepage / backup — apps per-role
 #   shared — set when anything outside a specific role touches the deploy
 #            surface (playbooks, group_vars, common role, requirements,
 #            deploy-tags action, smoke/prewarm scripts, ci.yml). When shared
-#            is true, every app bucket is forced to true upstream.
+#            is true, every infra + app bucket is forced to true upstream.
+#            Common role stays in shared_re on purpose: a common_packages bump
+#            might add a pkg a downstream role silently depends on, so force
+#            the full fan-out on common-role edits.
 #
 # Fall-back behaviour:
 #   - BASE is empty / zero-SHA (first push, branch re-creation): emit all true.
@@ -32,10 +36,12 @@ out() {
   printf '  %-18s %s\n' "$1" "$2" >&2
 }
 
+BUCKETS=(shared common wireguard ufw ssh fail2ban storage docker observability traefik vaultwarden jellyfin syncthing homepage backup)
+
 force_full() {
   local reason="$1"
   echo "detect-changes: forcing full fan-out — $reason" >&2
-  for b in shared observability traefik vaultwarden jellyfin syncthing homepage backup; do
+  for b in "${BUCKETS[@]}"; do
     out "$b" true
   done
   exit 0
@@ -56,16 +62,23 @@ if ! files=$(git diff --name-only "$BASE" "$HEAD" 2>/dev/null); then
 fi
 
 if [ -z "$files" ]; then
-  # No file changes — nothing to deploy, but infra + backup + finalize still
-  # run (they don't check this output). Emit all false.
+  # No file changes — nothing to deploy. Backup + finalize still run (they
+  # gate on !failure() && !cancelled(), not on this output). Emit all false.
   echo "detect-changes: no file changes in $BASE..$HEAD" >&2
-  for b in shared observability traefik vaultwarden jellyfin syncthing homepage backup; do
+  for b in "${BUCKETS[@]}"; do
     out "$b" false
   done
   exit 0
 fi
 
 shared=false
+common=false
+wg=false
+ufw=false
+ssh=false
+f2b=false
+storage=false
+docker=false
 obs=false
 traefik=false
 vw=false
@@ -81,6 +94,13 @@ shared_re='^(ansible/playbooks/|ansible/group_vars/|ansible/requirements\.yml$|\
 while IFS= read -r f; do
   [ -z "$f" ] && continue
   case "$f" in
+    ansible/roles/common/*)        common=true ;;
+    ansible/roles/wireguard/*)     wg=true ;;
+    ansible/roles/ufw/*)           ufw=true ;;
+    ansible/roles/ssh_hardening/*) ssh=true ;;
+    ansible/roles/fail2ban/*)      f2b=true ;;
+    ansible/roles/storage/*)       storage=true ;;
+    ansible/roles/docker/*)        docker=true ;;
     ansible/roles/observability/*) obs=true ;;
     ansible/roles/traefik/*)       traefik=true ;;
     ansible/roles/vaultwarden/*)   vw=true ;;
@@ -97,14 +117,22 @@ while IFS= read -r f; do
   fi
 done <<< "$files"
 
-# Shared implies every app bucket — simpler than repeating `|| shared` in
-# every job's `if:`.
+# Shared implies every bucket — simpler than repeating `|| shared` in every
+# job's `if:`.
 if [ "$shared" = true ]; then
+  common=true; wg=true; ufw=true; ssh=true; f2b=true; storage=true; docker=true
   obs=true; traefik=true; vw=true; jellyfin=true; syncthing=true; hp=true; backup=true
 fi
 
 echo "detect-changes: $(echo "$files" | wc -l | tr -d ' ') files changed in $BASE..$HEAD" >&2
 out shared "$shared"
+out common "$common"
+out wireguard "$wg"
+out ufw "$ufw"
+out ssh "$ssh"
+out fail2ban "$f2b"
+out storage "$storage"
+out docker "$docker"
 out observability "$obs"
 out traefik "$traefik"
 out vaultwarden "$vw"

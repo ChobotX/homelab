@@ -9,7 +9,6 @@ homepage_header_style: clean
 # green/red status dot + response time per tile — Homepage's built-in
 # per-service health indicator; no extra probes required.
 #
-# Group may contain direct `items:` and/or nested `subgroups:` (2 levels max).
 # Extra per-instance top-level groups live in homepage_services_extra in
 # /etc/homelab/config.yml — keeps real URLs out of git. Lists are concatenated
 # at template time.
@@ -32,30 +31,29 @@ homepage_services:
           # tight (no inner spaces) so we keep it that way even though
           # ansible-lint's jinja[spacing] would prefer spaces here.
           password: !unsafe "{{HOMEPAGE_VAR_GRAFANA_PASSWORD}}"  # noqa: jinja[spacing]
-    subgroups:
-      - group: Services
-        items:
-          - name: Vaultwarden
-            href: "https://{{ vaultwarden_host }}"
-            icon: vaultwarden.svg
-            description: Password vault
-            siteMonitor: "http://vaultwarden:80/alive"
-      - group: Media
-        items:
-          - name: Jellyfin
-            href: "https://{{ jellyfin_host }}"
-            icon: jellyfin.svg
-            description: Media streaming
-            # Health endpoint is unauth'd; dot goes green when the container is up
-            # and Traefik is routing. Live widget needs an API key from Jellyfin's
-            # first-run wizard — deferred (plumb via HOMEPAGE_VAR_JELLYFIN_KEY once
-            # registered).
-            siteMonitor: "http://jellyfin:8096/health"
-          - name: Syncthing
-            href: "https://{{ syncthing_host }}"
-            icon: syncthing.svg
-            description: Media upload & sync
-            siteMonitor: "http://syncthing:8384/rest/noauth/health"
+  - group: Services
+    items:
+      - name: Vaultwarden
+        href: "https://{{ vaultwarden_host }}"
+        icon: vaultwarden.svg
+        description: Password vault
+        siteMonitor: "http://vaultwarden:80/alive"
+  - group: Media
+    items:
+      - name: Jellyfin
+        href: "https://{{ jellyfin_host }}"
+        icon: jellyfin.svg
+        description: Media streaming
+        # Health endpoint is unauth'd; dot goes green when the container is up
+        # and Traefik is routing. Live widget needs an API key from Jellyfin's
+        # first-run wizard — deferred (plumb via HOMEPAGE_VAR_JELLYFIN_KEY once
+        # registered).
+        siteMonitor: "http://jellyfin:8096/health"
+      - name: Syncthing
+        href: "https://{{ syncthing_host }}"
+        icon: syncthing.svg
+        description: Media upload & sync
+        siteMonitor: "http://syncthing:8384/rest/noauth/health"
   - group: Raspberry Pi
     items:
       - name: Home Assistant
