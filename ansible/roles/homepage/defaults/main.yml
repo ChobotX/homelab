@@ -35,10 +35,10 @@ homepage_services:
         href: "https://alertmanager.{{ homelab_domain }}"
         icon: prometheus.svg
         description: Alert routing
+        # Homepage has no dedicated alertmanager widget — siteMonitor gives
+        # the green/red dot. Live alert count would need prometheusmetric
+        # against `ALERTS{alertstate="firing"}`; deferred.
         siteMonitor: "http://alertmanager:9093/-/ready"
-        widget:
-          type: alertmanager
-          url: "http://alertmanager:9093"
       - name: Traefik
         href: "https://{{ traefik_dashboard_host }}"
         icon: traefik.svg
