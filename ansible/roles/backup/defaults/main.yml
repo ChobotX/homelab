@@ -8,6 +8,7 @@ backup_paths:
   - /opt/traefik/letsencrypt
   - /opt/observability/data/grafana
   - /opt/observability/data/alertmanager
+  - /opt/n8n/data
   - /etc/wireguard
   - /etc/ssh
   - "/home/{{ admin_user }}"

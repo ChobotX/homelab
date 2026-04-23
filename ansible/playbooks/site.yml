@@ -15,6 +15,7 @@
 #   vaultwarden    → secret vault behind Traefik
 #   jellyfin       → media server behind Traefik (HW transcode if /dev/dri present)
 #   syncthing      → remote media ingest (sync protocol bound to WG IP)
+#   n8n            → workflow automation / webhook hub behind Traefik (WG-only)
 #   homepage       → signpost page at home.<homelab_domain> (links + live widgets)
 #   backup         → restic systemd timer (last, so backup sees steady state)
 
@@ -128,6 +129,8 @@
       tags: [jellyfin, media, services]
     - role: syncthing
       tags: [syncthing, media, services]
+    - role: n8n
+      tags: [n8n, automation, services]
     - role: homepage
       tags: [homepage, services]
     - role: backup

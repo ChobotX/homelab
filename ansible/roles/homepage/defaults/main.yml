@@ -54,6 +54,13 @@ homepage_services:
         icon: syncthing.svg
         description: Media upload & sync
         siteMonitor: "http://syncthing:8384/rest/noauth/health"
+  - group: Automation
+    items:
+      - name: n8n
+        href: "https://{{ n8n_host }}"
+        icon: n8n.svg
+        description: Workflow automation / webhooks
+        siteMonitor: "http://n8n:5678/healthz"
 # Per-instance additions (external PaaS, uptime pages, WG hub). Set in
 # /etc/homelab/config.yml; defaults to empty so no real URLs ship in git.
 homepage_services_extra: []

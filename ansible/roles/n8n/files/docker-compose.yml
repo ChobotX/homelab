@@ -1,0 +1,52 @@
+---
+# n8n — workflow automation / webhook hub.
+# Fronted by Traefik on the `proxy` network. No host port exposure.
+# WG-only reachability gated by Traefik's wg-only@file middleware.
+services:
+  n8n:
+    image: ${N8N_IMAGE}
+    container_name: n8n
+    restart: unless-stopped
+    # Long-running workflows may be mid-execution on stop — give them a moment
+    # to flush SQLite WAL before SIGKILL.
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    env_file:
+      - .env
+    volumes:
+      - ./data:/home/node/.n8n
+    networks:
+      - proxy
+    healthcheck:
+      # /healthz is n8n's built-in unauth'd liveness probe — 200/OK when the
+      # HTTP server is listening and the DB is reachable.
+      test: ["CMD-SHELL", "wget -qO- --timeout=2 http://127.0.0.1:5678/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+
+      traefik.http.routers.n8n.rule: "Host(`${N8N_HOST}`)"
+      traefik.http.routers.n8n.entrypoints: "websecure"
+      traefik.http.routers.n8n.tls: "true"
+      traefik.http.routers.n8n.tls.certresolver: "cloudflare"
+      traefik.http.routers.n8n.service: "n8n"
+      # n8n ships its own owner-account login — single-gate (WG + service auth)
+      # matches the vaultwarden posture. WG is the real network moat.
+      traefik.http.routers.n8n.middlewares: "wg-only@file,security-headers@file"
+      traefik.http.services.n8n.loadbalancer.server.port: "5678"
+      # Active healthcheck — Traefik buffers new TCP connects while backend is
+      # unhealthy (mid-swap), turning the recreate gap into a sub-second blip.
+      traefik.http.services.n8n.loadbalancer.healthcheck.path: "/healthz"
+      traefik.http.services.n8n.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.n8n.loadbalancer.healthcheck.timeout: "2s"
+
+networks:
+  proxy:
+    external: true

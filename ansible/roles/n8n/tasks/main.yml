@@ -1,0 +1,77 @@
+---
+# Self-mint the encryption key if absent — n8n uses it to AES-encrypt stored
+# credentials in the SQLite DB. Same posture as bootstrap.sh's
+# gen_secret_if_missing, but co-located with the role that needs it so new
+# services don't require a bootstrap re-run. `creates:` makes it idempotent.
+- name: Ensure n8n encryption key exists on target
+  ansible.builtin.shell: |
+    set -euo pipefail
+    install -m 0400 -o root -g root -T \
+      <(tr -dc 'A-Za-z0-9' </dev/urandom | head -c {{ n8n_encryption_key_length }}) \
+      /etc/homelab/secrets/n8n_encryption_key
+  args:
+    executable: /bin/bash
+    creates: /etc/homelab/secrets/n8n_encryption_key
+
+- name: Read n8n encryption key from target
+  ansible.builtin.slurp:
+    src: /etc/homelab/secrets/n8n_encryption_key
+  register: n8n_encryption_key_slurp
+  no_log: true
+
+- name: Set n8n_encryption_key fact
+  ansible.builtin.set_fact:
+    n8n_encryption_key: "{{ (n8n_encryption_key_slurp.content | b64decode).strip() }}"
+  no_log: true
+
+- name: Ensure /opt/n8n layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/n8n
+    - /opt/n8n/data
+
+# /home/node inside the image is UID 1000 — the container runs as non-root by
+# default. Bind-mounted /opt/n8n/data must be writable by that UID or the
+# container fails to open SQLite. Matches the "node" user the upstream image
+# ships with (docs.n8n.io/hosting/installation/docker).
+- name: Ensure /opt/n8n/data is owned by the container UID (node=1000)
+  ansible.builtin.file:
+    path: /opt/n8n/data
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0755"
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/n8n/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Swap n8n service
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/n8n/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap n8n service
+
+- name: Bring up n8n stack
+  # First-deploy safety net. `recreate: never` leaves running containers
+  # untouched on compose/image changes so the per-service handler owns every
+  # swap (with its --wait gate).
+  community.docker.docker_compose_v2:
+    project_src: /opt/n8n
+    state: present
+    pull: policy
+    recreate: never

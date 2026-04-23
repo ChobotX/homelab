@@ -1,0 +1,11 @@
+---
+# n8n `stable` channel, amd64+arm64 manifest digest pinned alongside the tag
+# so apt-style dpkg rollback semantics hold even if the tag is re-pushed.
+n8n_image: "n8nio/n8n:2.17.6@sha256:52e1870b45f0a84e8adeb5f5d9c6ac37cfdeed2a711c22355e26ddd8ccdd161a"
+n8n_host: "n8n.{{ homelab_domain }}"
+
+# Length of the locally-generated N8N_ENCRYPTION_KEY when the role mints one.
+# 48 chars of [A-Za-z0-9] ≈ 286 bits — exceeds AES-256 headroom with margin.
+# Losing this file breaks decryption of every stored credential in the SQLite
+# DB, so it's kept under /etc/homelab/secrets/ + included in backups.
+n8n_encryption_key_length: 48

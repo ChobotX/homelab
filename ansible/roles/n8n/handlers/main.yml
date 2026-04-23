@@ -1,0 +1,12 @@
+---
+# `up --wait` + n8n's /healthz (container healthcheck) + Traefik's active
+# loadbalancer healthcheck give a sub-second user-visible gap on a swap.
+# SQLite WAL is checkpointed inside stop_grace_period.
+
+- name: Swap n8n service
+  ansible.builtin.command:
+    chdir: /opt/n8n
+    # --force-recreate so bind-mounted env/compose changes actually trigger
+    # a restart (compose sees no service-spec diff otherwise).
+    cmd: docker compose up -d --wait --no-deps --force-recreate n8n
+  changed_when: true
