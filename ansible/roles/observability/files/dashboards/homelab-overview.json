@@ -629,6 +629,12 @@
           "expr": "nvidia_smi_utilization_memory_ratio",
           "legendFormat": "VRAM bw",
           "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "nvidia_smi_memory_used_bytes / nvidia_smi_memory_total_bytes",
+          "legendFormat": "VRAM fill",
+          "refId": "C"
         }
       ]
     },
