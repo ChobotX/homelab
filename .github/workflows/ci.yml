@@ -219,11 +219,14 @@ jobs:
       fail2ban: ${{ steps.detect.outputs.fail2ban }}
       storage: ${{ steps.detect.outputs.storage }}
       docker: ${{ steps.detect.outputs.docker }}
+      nvidia_container: ${{ steps.detect.outputs.nvidia_container }}
       observability: ${{ steps.detect.outputs.observability }}
       traefik: ${{ steps.detect.outputs.traefik }}
       vaultwarden: ${{ steps.detect.outputs.vaultwarden }}
       jellyfin: ${{ steps.detect.outputs.jellyfin }}
       syncthing: ${{ steps.detect.outputs.syncthing }}
+      n8n: ${{ steps.detect.outputs.n8n }}
+      ollama: ${{ steps.detect.outputs.ollama }}
       homepage: ${{ steps.detect.outputs.homepage }}
       backup: ${{ steps.detect.outputs.backup }}
     steps:
@@ -369,6 +372,27 @@ jobs:
         with:
           tags: docker
 
+  deploy-nvidia-container:
+    # Registers the `nvidia` docker runtime (via docker daemon.json template
+    # + nvidia-container-toolkit apt package). Skipped when host has no
+    # NVIDIA GPU — the role's first task asserts nvidia_gpu_enabled.
+    name: deploy (nvidia_container)
+    needs: [deploy-docker, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.nvidia_container == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: nvidia
+
   deploy-observability:
     name: deploy (observability)
     needs: [deploy-docker, deploy-ufw, changes]
@@ -459,6 +483,44 @@ jobs:
         with:
           tags: syncthing
 
+  deploy-n8n:
+    name: deploy (n8n)
+    needs: [deploy-docker, deploy-ufw, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.n8n == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: n8n
+
+  deploy-ollama:
+    # Waits for the nvidia runtime before starting a GPU-claiming container.
+    # Model pull (multi-GiB) is the long pole — 20min budget.
+    name: deploy (ollama)
+    needs: [deploy-docker, deploy-ufw, deploy-nvidia-container, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.ollama == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: ollama
+
   deploy-homepage:
     name: deploy (homepage)
     needs: [deploy-docker, deploy-ufw, changes]
@@ -483,7 +545,7 @@ jobs:
     # backup proceed even when some apps were skipped by the change gate —
     # `needs:` default would cascade-skip it otherwise. Gated on
     # changes.backup; weekly schedule force-fulls to heal drift.
-    needs: [deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-syncthing, deploy-homepage, changes]
+    needs: [deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-syncthing, deploy-n8n, deploy-ollama, deploy-nvidia-container, deploy-homepage, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')

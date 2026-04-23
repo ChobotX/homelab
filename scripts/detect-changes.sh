@@ -3,8 +3,8 @@
 # DAG can skip unchanged roles.
 #
 # Buckets (written to $GITHUB_OUTPUT):
-#   common / wireguard / ufw / ssh / fail2ban / storage / docker — infra per-role
-#   observability / traefik / vaultwarden / jellyfin / syncthing / homepage / backup — apps per-role
+#   common / wireguard / ufw / ssh / fail2ban / storage / docker / nvidia_container — infra per-role
+#   observability / traefik / vaultwarden / jellyfin / syncthing / n8n / ollama / homepage / backup — apps per-role
 #   shared — set when anything outside a specific role touches the deploy
 #            surface (playbooks, group_vars, common role, requirements,
 #            deploy-tags action, smoke/prewarm scripts, ci.yml). When shared
@@ -36,7 +36,7 @@ out() {
   printf '  %-18s %s\n' "$1" "$2" >&2
 }
 
-BUCKETS=(shared common wireguard ufw ssh fail2ban storage docker observability traefik vaultwarden jellyfin syncthing homepage backup)
+BUCKETS=(shared common wireguard ufw ssh fail2ban storage docker nvidia_container observability traefik vaultwarden jellyfin syncthing n8n ollama homepage backup)
 
 force_full() {
   local reason="$1"
@@ -79,11 +79,14 @@ ssh=false
 f2b=false
 storage=false
 docker=false
+nvidia_container=false
 obs=false
 traefik=false
 vw=false
 jellyfin=false
 syncthing=false
+n8n=false
+ollama=false
 hp=false
 backup=false
 
@@ -101,11 +104,14 @@ while IFS= read -r f; do
     ansible/roles/fail2ban/*)      f2b=true ;;
     ansible/roles/storage/*)       storage=true ;;
     ansible/roles/docker/*)        docker=true ;;
+    ansible/roles/nvidia_container/*) nvidia_container=true ;;
     ansible/roles/observability/*) obs=true ;;
     ansible/roles/traefik/*)       traefik=true ;;
     ansible/roles/vaultwarden/*)   vw=true ;;
     ansible/roles/jellyfin/*)      jellyfin=true ;;
     ansible/roles/syncthing/*)     syncthing=true ;;
+    ansible/roles/n8n/*)           n8n=true ;;
+    ansible/roles/ollama/*)        ollama=true ;;
     ansible/roles/homepage/*)      hp=true ;;
     ansible/roles/backup/*)        backup=true ;;
   esac
@@ -121,7 +127,8 @@ done <<< "$files"
 # job's `if:`.
 if [ "$shared" = true ]; then
   common=true; wg=true; ufw=true; ssh=true; f2b=true; storage=true; docker=true
-  obs=true; traefik=true; vw=true; jellyfin=true; syncthing=true; hp=true; backup=true
+  nvidia_container=true
+  obs=true; traefik=true; vw=true; jellyfin=true; syncthing=true; n8n=true; ollama=true; hp=true; backup=true
 fi
 
 echo "detect-changes: $(echo "$files" | wc -l | tr -d ' ') files changed in $BASE..$HEAD" >&2
@@ -133,10 +140,13 @@ out ssh "$ssh"
 out fail2ban "$f2b"
 out storage "$storage"
 out docker "$docker"
+out nvidia_container "$nvidia_container"
 out observability "$obs"
 out traefik "$traefik"
 out vaultwarden "$vw"
 out jellyfin "$jellyfin"
 out syncthing "$syncthing"
+out n8n "$n8n"
+out ollama "$ollama"
 out homepage "$hp"
 out backup "$backup"
