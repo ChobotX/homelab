@@ -1,0 +1,12 @@
+---
+# Per-host facts for the homelab box. Group_vars/all stays generic; this file
+# carries values that only make sense for this single physical machine.
+
+# Physical LAN — eno1 sits on the home subnet behind the router. Used by
+# services that want to accept connections at line-rate when peers are on the
+# same broadcast domain (Syncthing especially: BEP rate-limit treats true LAN
+# transfers as unmetered when alwaysLocalNet covers this CIDR).
+#
+# Leave undefined to disable LAN-IP bindings — services then stay WG-only.
+homelab_lan_ip: 192.168.1.118
+homelab_lan_subnet: 192.168.1.0/24

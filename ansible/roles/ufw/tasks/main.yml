@@ -25,6 +25,21 @@
         - { name: syncthing-tcp, port: "22000", proto: "tcp" }
         - { name: syncthing-udp, port: "22000", proto: "udp" }
 
+    - name: Allow Syncthing sync protocol from LAN subnet
+      # Container also binds 22000 on homelab_lan_ip (templated in compose);
+      # without this UFW rule the bind exists but packets get dropped at the
+      # host firewall. Skipped when the host has no LAN var set.
+      when: homelab_lan_subnet is defined and homelab_lan_subnet
+      community.general.ufw:
+        rule: allow
+        port: "22000"
+        proto: "{{ item }}"
+        src: "{{ homelab_lan_subnet }}"
+        comment: "syncthing-{{ item }}-from-lan"
+      loop:
+        - tcp
+        - udp
+
     - name: Allow nvidia_gpu_exporter from Docker bridge networks
       # Exporter binds 0.0.0.0:9835 on host so Prometheus (in the observability
       # bridge network) can reach it via host-gateway. Allow from all standard

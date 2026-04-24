@@ -1,7 +1,7 @@
 ---
 # Syncthing remote-ingest node. GUI fronted by Traefik (WG-only + dashboard-auth).
-# Sync protocol (tcp+udp/22000) bound to the WG IP only — no public ingress,
-# WG peers reach it by explicit device ID.
+# Sync protocol (tcp+udp/22000) bound to the WG IP, plus the physical LAN IP
+# when host_vars defines `homelab_lan_ip`. UFW gates per-subnet reachability.
 
 - name: Ensure /opt/syncthing layout
   ansible.builtin.file:
@@ -36,8 +36,8 @@
   notify: Swap syncthing service
 
 - name: Deploy docker-compose.yml
-  ansible.builtin.copy:
-    src: docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
     dest: /opt/syncthing/docker-compose.yml
     owner: root
     group: root

@@ -1,7 +1,9 @@
 ---
 # Syncthing — peer-to-peer file sync for remote media ingest.
 # GUI fronted by Traefik on the `proxy` network. Also joins `observability`
-# so future /metrics scrapes work. Sync protocol binds to the WG IP only.
+# so future /metrics scrapes work. Sync protocol binds to the WG IP, plus the
+# physical LAN IP when host_vars defines `homelab_lan_ip` — lets peers on the
+# home subnet connect at line-rate without going through the WG tunnel.
 services:
   syncthing:
     image: ${SYNCTHING_IMAGE}
@@ -41,12 +43,16 @@ services:
     volumes:
       - ./config:/var/syncthing
       - ${SYNCTHING_SYNC_ROOT}:/var/syncthing/Sync:rw
-    # Sync protocol ports bound to WG IP only — no public ingress. Peers
-    # connect over the tunnel by explicit device ID (no global discovery,
-    # no relay). UDP/22000 is QUIC.
+    # Sync protocol ports bound to specific host IPs — never 0.0.0.0. UFW
+    # gates which subnets reach those IPs. Peers connect by explicit device ID
+    # (no global discovery, no relay). UDP/22000 is QUIC.
     ports:
       - "${WG_IP}:22000:22000/tcp"
       - "${WG_IP}:22000:22000/udp"
+{% if homelab_lan_ip is defined and homelab_lan_ip %}
+      - "{{ homelab_lan_ip }}:22000:22000/tcp"
+      - "{{ homelab_lan_ip }}:22000:22000/udp"
+{% endif %}
     networks:
       - proxy
       - observability
