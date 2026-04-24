@@ -21,15 +21,15 @@ ollama_host: "ollama.{{ homelab_domain }}"
 ollama_prune_undeclared: false
 
 ollama_models:
-  # Winner of the 2026-04 CZ translation bake-off: aya-expanse:8b-q4_0.
-  # Aya was the only candidate that got both "capsicum→paprika" and
-  # "cousins→bratranci" right, with correct case inflection throughout.
-  # Qwen3 confused cousins with siblings, gemma3 hallucinated "chilli" for
-  # capsicum, gemma4:e2b ran on CPU-offload (P2000 OOM) and invented words,
-  # qwen3:4b fabricated vocabulary wholesale. Losers pruned; re-add here
-  # if a retest is wanted.
-  - aya-expanse:8b-q4_0     # primary — multilingual specialist (23 langs, CZ strong)
-  - gemma3:4b-it-qat        # fast fallback — 3 GiB VRAM, ~27 tok/s, for speed-over-quality cases
+  # Round 1 winner of the 2026-04 CZ translation bake-off: aya-expanse:8b-q4_0.
+  # Round 2 adds CZ-specific fine-tunes to see if a native-speaker corpus
+  # beats a generalist multilingual model on idioms + morphology. Seznam.cz
+  # doesn't publish a generative LLM (only embeddings); BUT-FIT/csmpt7b uses
+  # the older MPT arch and requires manual Modelfile import, skipped.
+  - aya-expanse:8b-q4_0                   # round 1 winner — multilingual specialist
+  - gemma3:4b-it-qat                      # fast fallback — 3 GiB, ~27 tok/s
+  - hollis9/czellama3                     # 4.7 GiB — Llama 3 CZ fine-tune
+  - jobautomation/OpenEuroLLM-Czech       # 8.1 GiB — Gemma 3 CZ (EU consortium); CPU-offload on P2000
 
 # Keep the last-loaded model resident instead of unloading after 5min idle.
 # Avoids cold-start latency on sporadic n8n webhook traffic — 4b weights
