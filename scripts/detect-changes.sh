@@ -92,7 +92,7 @@ backup=false
 
 # ── Shared surface — anything here forces every app bucket to run.
 #    Kept in one regex so additions are obvious.
-shared_re='^(ansible/playbooks/|ansible/group_vars/|ansible/requirements\.yml$|\.ansible-version$|ansible/roles/common/|\.github/actions/deploy-tags/|\.github/workflows/ci\.yml$|scripts/smoke-deploy\.sh$|scripts/prewarm-images\.sh$|scripts/detect-changes\.sh$|bootstrap\.sh$)'
+shared_re='^(ansible/playbooks/|ansible/group_vars/|ansible/host_vars/|ansible/requirements\.yml$|\.ansible-version$|ansible/roles/common/|\.github/actions/deploy-tags/|\.github/workflows/ci\.yml$|scripts/smoke-deploy\.sh$|scripts/prewarm-images\.sh$|scripts/detect-changes\.sh$|bootstrap\.sh$)'
 
 while IFS= read -r f; do
   [ -z "$f" ] && continue
