@@ -26,6 +26,14 @@ tc class add dev "$IFACE" parent 1:1 classid 1:10 htb rate 1000mbit ceil 1000mbi
 # 1:20 — WAN egress (default). Upload cap lives here.
 tc class add dev "$IFACE" parent 1:1 classid 1:20 htb rate "${UP_MBIT}mbit" ceil "${UP_MBIT}mbit"
 
+# fq_codel leaves — flow-isolated DRR + codel inside each HTB class. Without
+# these, HTB leaves default to pfifo, and bulk TCP under the WAN cap builds a
+# standing queue that starves tiny interactive UDP (e.g. WG handshake ~148 B,
+# keepalive ~32 B). WG peers then cross the 180 s handshake watchdog and
+# renegotiate, breaking every WG-tunneled WebSocket (n8n /rest/push etc.).
+tc qdisc add dev "$IFACE" parent 1:10 handle 10: fq_codel
+tc qdisc add dev "$IFACE" parent 1:20 handle 20: fq_codel
+
 {% for subnet in qos_lan_subnets %}
 # LAN dst filter → uncapped class. prio 1 wins before default routing.
 tc filter add dev "$IFACE" protocol ip parent 1:0 prio 1 u32 match ip dst {{ subnet }} flowid 1:10
@@ -46,6 +54,10 @@ tc qdisc add dev ifb0 root handle 1: htb default 20
 tc class add dev ifb0 parent 1: classid 1:1 htb rate 1000mbit
 tc class add dev ifb0 parent 1:1 classid 1:10 htb rate 1000mbit ceil 1000mbit
 tc class add dev ifb0 parent 1:1 classid 1:20 htb rate "${DOWN_MBIT}mbit" ceil "${DOWN_MBIT}mbit"
+
+# Ingress leaves — same reasoning as egress.
+tc qdisc add dev ifb0 parent 1:10 handle 110: fq_codel
+tc qdisc add dev ifb0 parent 1:20 handle 120: fq_codel
 
 {% for subnet in qos_lan_subnets %}
 tc filter add dev ifb0 protocol ip parent 1:0 prio 1 u32 match ip src {{ subnet }} flowid 1:10
