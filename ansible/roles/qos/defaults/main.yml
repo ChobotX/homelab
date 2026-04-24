@@ -1,0 +1,34 @@
+---
+# Traffic shaping for the homelab's physical uplink. Goal: prevent the box
+# from saturating the household ISP link when it does heavy egress/ingress
+# (model pulls, OS image prewarm, backup to SFTP, media scrubs). LAN peers
+# keep full line-rate — only internet- and WG-destined traffic is capped.
+#
+# Mechanism:
+#   * Egress: HTB on the physical NIC. LAN subnet → unlimited class;
+#     everything else → capped class (WAN + WG-over-internet).
+#   * Ingress: NIC can't queue inbound, so we mirror ingress to an IFB
+#     pseudo-device and run HTB there. Same LAN-vs-WAN split, reversed
+#     (match on src IP because ingress frames haven't been delivered yet).
+#
+# Toggle with qos_enabled=false to fully remove shaping (service Stops, which
+# flushes qdiscs). Values pick the ISP link ceiling minus ~10% headroom —
+# leaving headroom is what keeps small interactive packets from queueing
+# behind a saturated bulk download.
+
+qos_enabled: true
+
+# Primary NIC. Keep as a var so a second host with a different interface
+# name (enp*) can override in host_vars without touching role templates.
+qos_interface: eno1
+
+# Caps applied to non-LAN destinations. Mbit = Mbps in tc-speak.
+# Set below the ISP advertised rate — the ceiling only works if traffic
+# queues here instead of at the ISP edge.
+qos_download_mbps: 60
+qos_upload_mbps: 40
+
+# Any dst/src IP matching these CIDRs skips the cap. Everything else falls
+# into the default (capped) class.
+qos_lan_subnets:
+  - "{{ homelab_lan_subnet }}"

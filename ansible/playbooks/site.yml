@@ -3,6 +3,7 @@
 #
 # Role order is intentional — prevents self-lockout and respects bootstrap deps:
 #   common         → base packages, log caps, auto security updates
+#   qos            → host-side traffic shaping (LAN uncapped, WAN metered)
 #   wireguard      → manage wg0.conf (never touches privatekey)
 #   ufw            → firewall BEFORE sshd re-tightening (avoid lockout from dropped rules)
 #   ssh_hardening  → final sshd config
@@ -109,6 +110,8 @@
   roles:
     - role: common
       tags: [common, base]
+    - role: qos
+      tags: [qos, network, base]
     - role: wireguard
       tags: [wireguard, network]
     - role: ufw

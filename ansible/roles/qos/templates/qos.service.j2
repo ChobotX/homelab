@@ -1,0 +1,18 @@
+[Unit]
+Description=Homelab traffic shaping (HTB + IFB on {{ qos_interface }})
+After=network-online.target
+Wants=network-online.target
+# ConditionPathExists is cheap belt-and-braces — if ansible ever templates
+# the unit without the script, the unit fails clean instead of silently.
+ConditionPathExists=/usr/local/sbin/tc-apply.sh
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/tc-apply.sh
+ExecStop=/usr/local/sbin/tc-flush.sh
+# No Restart= — oneshot services don't restart; ansible handler handles
+# reapply on template change.
+
+[Install]
+WantedBy=multi-user.target

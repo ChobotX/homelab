@@ -1,0 +1,19 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Reload ifb module
+  # modprobe is idempotent — noop if already loaded. Explicit so the very
+  # first apply works without a reboot (modules-load.d only fires at boot).
+  ansible.builtin.command: modprobe ifb
+  changed_when: false
+
+- name: Reapply QoS
+  # Restart (not reload) — the apply script does a full flush+recreate, so
+  # restart is the clean path. no-op when qos_enabled=false thanks to state
+  # coupling in tasks/main.yml.
+  ansible.builtin.systemd:
+    name: qos.service
+    state: restarted
+  when: qos_enabled | bool

@@ -213,6 +213,7 @@ jobs:
     outputs:
       shared: ${{ steps.detect.outputs.shared }}
       common: ${{ steps.detect.outputs.common }}
+      qos: ${{ steps.detect.outputs.qos }}
       wireguard: ${{ steps.detect.outputs.wireguard }}
       ufw: ${{ steps.detect.outputs.ufw }}
       ssh: ${{ steps.detect.outputs.ssh }}
@@ -259,6 +260,28 @@ jobs:
       - uses: ./.github/actions/deploy-tags
         with:
           tags: common
+
+  deploy-qos:
+    # Traffic shaping (HTB + IFB) on the physical NIC. Intentionally early
+    # in the DAG — gets applied before heavy-network roles (ollama model
+    # pulls, observability image prewarms) so they run capped from the start.
+    # No downstream `needs:` edges; other roles don't depend on tc rules.
+    name: deploy (qos)
+    needs: [deploy-common, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.qos == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: qos
 
   deploy-wireguard:
     name: deploy (wireguard)
@@ -503,9 +526,11 @@ jobs:
 
   deploy-ollama:
     # Waits for the nvidia runtime before starting a GPU-claiming container.
-    # Model pull (multi-GiB) is the long pole — 20min budget.
+    # Model pull (multi-GiB) is the long pole — 20min budget. Also waits on
+    # deploy-qos so tc rules are in place before the multi-GB pulls kick off
+    # (uncapped pulls saturate the household ISP link).
     name: deploy (ollama)
-    needs: [deploy-docker, deploy-ufw, deploy-nvidia-container, changes]
+    needs: [deploy-docker, deploy-ufw, deploy-nvidia-container, deploy-qos, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -545,7 +570,7 @@ jobs:
     # backup proceed even when some apps were skipped by the change gate —
     # `needs:` default would cascade-skip it otherwise. Gated on
     # changes.backup; weekly schedule force-fulls to heal drift.
-    needs: [deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-syncthing, deploy-n8n, deploy-ollama, deploy-nvidia-container, deploy-homepage, changes]
+    needs: [deploy-qos, deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-syncthing, deploy-n8n, deploy-ollama, deploy-nvidia-container, deploy-homepage, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')

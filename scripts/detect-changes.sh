@@ -36,7 +36,7 @@ out() {
   printf '  %-18s %s\n' "$1" "$2" >&2
 }
 
-BUCKETS=(shared common wireguard ufw ssh fail2ban storage docker nvidia_container observability traefik vaultwarden jellyfin syncthing n8n ollama homepage backup)
+BUCKETS=(shared common qos wireguard ufw ssh fail2ban storage docker nvidia_container observability traefik vaultwarden jellyfin syncthing n8n ollama homepage backup)
 
 force_full() {
   local reason="$1"
@@ -73,6 +73,7 @@ fi
 
 shared=false
 common=false
+qos=false
 wg=false
 ufw=false
 ssh=false
@@ -98,6 +99,7 @@ while IFS= read -r f; do
   [ -z "$f" ] && continue
   case "$f" in
     ansible/roles/common/*)        common=true ;;
+    ansible/roles/qos/*)           qos=true ;;
     ansible/roles/wireguard/*)     wg=true ;;
     ansible/roles/ufw/*)           ufw=true ;;
     ansible/roles/ssh_hardening/*) ssh=true ;;
@@ -126,7 +128,7 @@ done <<< "$files"
 # Shared implies every bucket — simpler than repeating `|| shared` in every
 # job's `if:`.
 if [ "$shared" = true ]; then
-  common=true; wg=true; ufw=true; ssh=true; f2b=true; storage=true; docker=true
+  common=true; qos=true; wg=true; ufw=true; ssh=true; f2b=true; storage=true; docker=true
   nvidia_container=true
   obs=true; traefik=true; vw=true; jellyfin=true; syncthing=true; n8n=true; ollama=true; hp=true; backup=true
 fi
@@ -134,6 +136,7 @@ fi
 echo "detect-changes: $(echo "$files" | wc -l | tr -d ' ') files changed in $BASE..$HEAD" >&2
 out shared "$shared"
 out common "$common"
+out qos "$qos"
 out wireguard "$wg"
 out ufw "$ufw"
 out ssh "$ssh"

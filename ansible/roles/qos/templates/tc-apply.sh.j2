@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Apply HTB+IFB traffic shaping on {{ qos_interface }}.
+# LAN subnets stay line-rate; everything else caps at the ISP-headroom values.
+#
+# Rendered by ansible role `qos`. Edit the template, not this file.
+set -euo pipefail
+
+IFACE="{{ qos_interface }}"
+DOWN_MBIT={{ qos_download_mbps }}
+UP_MBIT={{ qos_upload_mbps }}
+
+# Full reset — cheap, and guarantees idempotent reapply regardless of prior
+# state. `|| true` because a fresh boot has nothing to delete.
+tc qdisc del dev "$IFACE" root    2>/dev/null || true
+tc qdisc del dev "$IFACE" ingress 2>/dev/null || true
+ip link set ifb0 down             2>/dev/null || true
+ip link del  ifb0                 2>/dev/null || true
+
+# ── Egress shaping on the physical NIC
+# HTB root with default class 1:20 (the WAN/capped class). LAN filter below
+# reclassifies matching flows to 1:10 (uncapped).
+tc qdisc add dev "$IFACE" root handle 1: htb default 20
+tc class add dev "$IFACE" parent 1: classid 1:1 htb rate 1000mbit
+# 1:10 — LAN egress. Ceiling equal to root so it's effectively unshaped.
+tc class add dev "$IFACE" parent 1:1 classid 1:10 htb rate 1000mbit ceil 1000mbit
+# 1:20 — WAN egress (default). Upload cap lives here.
+tc class add dev "$IFACE" parent 1:1 classid 1:20 htb rate "${UP_MBIT}mbit" ceil "${UP_MBIT}mbit"
+
+{% for subnet in qos_lan_subnets %}
+# LAN dst filter → uncapped class. prio 1 wins before default routing.
+tc filter add dev "$IFACE" protocol ip parent 1:0 prio 1 u32 match ip dst {{ subnet }} flowid 1:10
+{% endfor %}
+
+# ── Ingress shaping via IFB
+# A NIC can't queue ingress directly. We mirror all inbound frames to ifb0
+# and run HTB there. IFB filters by SRC (traffic came from <src>) since the
+# frames haven't been delivered yet.
+ip link add ifb0 type ifb
+ip link set ifb0 up
+
+tc qdisc add dev "$IFACE" handle ffff: ingress
+tc filter add dev "$IFACE" parent ffff: protocol ip u32 match u32 0 0 \
+    action mirred egress redirect dev ifb0
+
+tc qdisc add dev ifb0 root handle 1: htb default 20
+tc class add dev ifb0 parent 1: classid 1:1 htb rate 1000mbit
+tc class add dev ifb0 parent 1:1 classid 1:10 htb rate 1000mbit ceil 1000mbit
+tc class add dev ifb0 parent 1:1 classid 1:20 htb rate "${DOWN_MBIT}mbit" ceil "${DOWN_MBIT}mbit"
+
+{% for subnet in qos_lan_subnets %}
+tc filter add dev ifb0 protocol ip parent 1:0 prio 1 u32 match ip src {{ subnet }} flowid 1:10
+{% endfor %}
+
+echo "qos: applied ${DOWN_MBIT}/${UP_MBIT} Mbps cap on $IFACE (LAN exempt)"

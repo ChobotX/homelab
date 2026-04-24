@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: qos
+  author: homelab
+  description: Host-side traffic shaping (HTB + IFB) with LAN exception
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+dependencies: []

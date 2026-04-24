@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Remove all HTB+IFB shaping on {{ qos_interface }}. Idempotent.
+set -euo pipefail
+
+IFACE="{{ qos_interface }}"
+
+tc qdisc del dev "$IFACE" root    2>/dev/null || true
+tc qdisc del dev "$IFACE" ingress 2>/dev/null || true
+ip link set ifb0 down             2>/dev/null || true
+ip link del  ifb0                 2>/dev/null || true
+
+echo "qos: flushed shaping on $IFACE"
