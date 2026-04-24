@@ -54,6 +54,26 @@ homepage_services:
         icon: syncthing.svg
         description: Media upload & sync
         siteMonitor: "http://syncthing:8384/rest/noauth/health"
+      - name: Sonarr
+        href: "https://{{ sonarr_host }}"
+        icon: sonarr.svg
+        description: TV library manager
+      - name: Radarr
+        href: "https://{{ radarr_host }}"
+        icon: radarr.svg
+        description: Movie library manager
+      - name: Prowlarr
+        href: "https://{{ prowlarr_host }}"
+        icon: prowlarr.svg
+        description: Indexer manager (via Mullvad)
+      - name: Bazarr
+        href: "https://{{ bazarr_host }}"
+        icon: bazarr.svg
+        description: Subtitles for Sonarr + Radarr
+      - name: qBittorrent
+        href: "https://{{ qbittorrent_host }}"
+        icon: qbittorrent.svg
+        description: Download client (via Mullvad)
   - group: Automation
     items:
       - name: n8n
