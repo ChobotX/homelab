@@ -15,13 +15,17 @@ ollama_host: "ollama.{{ homelab_domain }}"
 # quantization baked into the loss, so Q4 quality tracks closer to FP16 than
 # post-training-quantized `gemma3:4b` at identical VRAM cost.
 ollama_models:
-  - gemma3:4b-it-qat
-  # A/B candidate for CZ translation workflow — qwen2.5 7B has stronger
-  # multilingual morphology (Slavic cases, idioms) than gemma3:4b at a
-  # similar VRAM footprint (~4.7 GiB Q4_K_M). P2000 5G can hold only one
-  # resident at a time; ollama evicts on model switch. Drop whichever
-  # loses the bake-off.
-  - qwen2.5:7b-instruct-q4_K_M
+  # Bake-off pool for CZ translation workflow. P2000 5G holds one at a time;
+  # ollama evicts on model switch (cold-load ~5s from HDD, then resident).
+  # All models live on HDD (ollama_models_root), cheap to keep around during
+  # eval. Once winner picked, prune losers here to reclaim ~15 GiB.
+  #
+  # Gemma 4 deliberately absent — smallest Q4 variant (e4b-it-q4_K_M) is
+  # 9.6 GiB, blocked behind the 3060 Ti 8G upgrade.
+  - gemma3:4b-it-qat        # baseline — QAT-tuned, wobbly CZ morphology
+  - qwen3:4b-q4_K_M         # modern 4B, 119 languages (vs gemma3's EN-centric)
+  - qwen3:8b-q4_K_M         # 5.2 GiB — tight on P2000, may OOM; best capacity
+  - aya-expanse:8b-q4_0     # Cohere multilingual specialist, 23 langs incl CZ
 
 # Keep the last-loaded model resident instead of unloading after 5min idle.
 # Avoids cold-start latency on sporadic n8n webhook traffic — 4b weights
