@@ -65,3 +65,22 @@
   register: ollama_pull
   changed_when: "'pulling' in ollama_pull.stdout or 'writing' in ollama_pull.stdout"
   when: item not in (ollama_list.stdout | default(''))
+
+- name: Compute on-disk models not in declared list
+  # `ollama list` header is line 0, models start at line 1. First
+  # whitespace-delimited column is `name:tag`. Diff against `ollama_models`
+  # gives the removable set.
+  ansible.builtin.set_fact:
+    ollama_undeclared: "{{ (ollama_list.stdout_lines[1:] | default([]))
+                          | map('split') | map('first') | list
+                          | difference(ollama_models) }}"
+  when: ollama_prune_undeclared | bool
+
+- name: Remove Ollama models absent from declared list
+  # Opt-in destructive — gated on `ollama_prune_undeclared`. Keep defaulted
+  # to false so hand-pulled experiments on a host aren't silently purged on
+  # the next converge.
+  ansible.builtin.command: "docker exec ollama ollama rm {{ item }}"
+  loop: "{{ ollama_undeclared | default([]) }}"
+  changed_when: true
+  when: ollama_prune_undeclared | bool

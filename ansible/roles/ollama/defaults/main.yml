@@ -14,22 +14,22 @@ ollama_host: "ollama.{{ homelab_domain }}"
 # QAT = quantization-aware training. Google trains the model with Q4
 # quantization baked into the loss, so Q4 quality tracks closer to FP16 than
 # post-training-quantized `gemma3:4b` at identical VRAM cost.
+# When true, any model on-disk but absent from `ollama_models` is removed on
+# converge (reclaims HDD after a bake-off). Default off — we don't want
+# surprise `ollama rm` on a host where someone hand-pulled a model outside
+# IaC. Flip to true explicitly after pruning the declared list.
+ollama_prune_undeclared: false
+
 ollama_models:
-  # Bake-off pool for CZ translation workflow. P2000 5G holds one at a time;
-  # ollama evicts on model switch (cold-load ~5s from HDD, then resident).
-  # All models live on HDD (ollama_models_root), cheap to keep around during
-  # eval. Once winner picked, prune losers here to reclaim ~15 GiB.
-  #
-  # Gemma 4's Per-Layer Embeddings (PLE) keep embedding tables uncompressed,
-  # so on-disk size is ~2x the raw-weights figure Google cites. e2b-q4_K_M
-  # is 7.2 GiB → overflows P2000 5G; ollama will partial-offload to CPU
-  # (~1-3 tok/s vs 27 tok/s GPU-resident). Kept in pool for quality eval
-  # only; will be promoted to primary on the 3060 Ti 8G upgrade.
-  - gemma3:4b-it-qat        # baseline — QAT-tuned, wobbly CZ morphology
-  - qwen3:4b-q4_K_M         # modern 4B, 119 languages (vs gemma3's EN-centric)
-  - qwen3:8b-q4_K_M         # 5.2 GiB — tight on P2000, may OOM; best capacity
-  - aya-expanse:8b-q4_0     # Cohere multilingual specialist, 23 langs incl CZ
-  - gemma4:e2b-it-q4_K_M    # 7.2 GiB — CPU-offload on P2000, quality A/B only
+  # Winner of the 2026-04 CZ translation bake-off: aya-expanse:8b-q4_0.
+  # Aya was the only candidate that got both "capsicum→paprika" and
+  # "cousins→bratranci" right, with correct case inflection throughout.
+  # Qwen3 confused cousins with siblings, gemma3 hallucinated "chilli" for
+  # capsicum, gemma4:e2b ran on CPU-offload (P2000 OOM) and invented words,
+  # qwen3:4b fabricated vocabulary wholesale. Losers pruned; re-add here
+  # if a retest is wanted.
+  - aya-expanse:8b-q4_0     # primary — multilingual specialist (23 langs, CZ strong)
+  - gemma3:4b-it-qat        # fast fallback — 3 GiB VRAM, ~27 tok/s, for speed-over-quality cases
 
 # Keep the last-loaded model resident instead of unloading after 5min idle.
 # Avoids cold-start latency on sporadic n8n webhook traffic — 4b weights
