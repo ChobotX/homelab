@@ -16,6 +16,12 @@ ollama_host: "ollama.{{ homelab_domain }}"
 # post-training-quantized `gemma3:4b` at identical VRAM cost.
 ollama_models:
   - gemma3:4b-it-qat
+  # A/B candidate for CZ translation workflow — qwen2.5 7B has stronger
+  # multilingual morphology (Slavic cases, idioms) than gemma3:4b at a
+  # similar VRAM footprint (~4.7 GiB Q4_K_M). P2000 5G can hold only one
+  # resident at a time; ollama evicts on model switch. Drop whichever
+  # loses the bake-off.
+  - qwen2.5:7b-instruct-q4_K_M
 
 # Keep the last-loaded model resident instead of unloading after 5min idle.
 # Avoids cold-start latency on sporadic n8n webhook traffic — 4b weights
