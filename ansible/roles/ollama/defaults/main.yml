@@ -20,12 +20,16 @@ ollama_models:
   # All models live on HDD (ollama_models_root), cheap to keep around during
   # eval. Once winner picked, prune losers here to reclaim ~15 GiB.
   #
-  # Gemma 4 deliberately absent — smallest Q4 variant (e4b-it-q4_K_M) is
-  # 9.6 GiB, blocked behind the 3060 Ti 8G upgrade.
+  # Gemma 4's Per-Layer Embeddings (PLE) keep embedding tables uncompressed,
+  # so on-disk size is ~2x the raw-weights figure Google cites. e2b-q4_K_M
+  # is 7.2 GiB → overflows P2000 5G; ollama will partial-offload to CPU
+  # (~1-3 tok/s vs 27 tok/s GPU-resident). Kept in pool for quality eval
+  # only; will be promoted to primary on the 3060 Ti 8G upgrade.
   - gemma3:4b-it-qat        # baseline — QAT-tuned, wobbly CZ morphology
   - qwen3:4b-q4_K_M         # modern 4B, 119 languages (vs gemma3's EN-centric)
   - qwen3:8b-q4_K_M         # 5.2 GiB — tight on P2000, may OOM; best capacity
   - aya-expanse:8b-q4_0     # Cohere multilingual specialist, 23 langs incl CZ
+  - gemma4:e2b-it-q4_K_M    # 7.2 GiB — CPU-offload on P2000, quality A/B only
 
 # Keep the last-loaded model resident instead of unloading after 5min idle.
 # Avoids cold-start latency on sporadic n8n webhook traffic — 4b weights
