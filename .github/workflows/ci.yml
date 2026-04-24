@@ -537,7 +537,10 @@ jobs:
           || github.event_name == 'schedule')
       && needs.changes.outputs.ollama == 'true'
     runs-on: [self-hosted, linux, homelab]
-    timeout-minutes: 20
+    # 45min budget: 60 Mbps QoS cap means a fresh ~13 GiB multi-model pull
+    # takes ~29min on the wire alone; add compose up + steady-state converge
+    # headroom. Steady-state (all models cached) runs in well under 5min.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
