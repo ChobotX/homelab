@@ -17,6 +17,12 @@
 #   vaultwarden    → secret vault behind Traefik
 #   jellyfin       → media server behind Traefik (HW transcode if /dev/dri present)
 #   syncthing      → remote media ingest (sync protocol bound to WG IP)
+#   gluetun        → Mullvad WG sidecar (killswitch netns for qbit + prowlarr)
+#   qbittorrent    → download client inside gluetun netns (all traffic via VPN)
+#   prowlarr       → indexer manager inside gluetun netns
+#   sonarr         → TV library manager (direct, arr docker network)
+#   radarr         → movie library manager (direct, arr docker network)
+#   bazarr         → subtitle manager (direct, arr docker network)
 #   n8n            → workflow automation / webhook hub behind Traefik (WG-only)
 #   ollama         → local LLM inference (GPU), backend-only on proxy network
 #   homepage       → signpost page at home.<homelab_domain> (links + live widgets)
@@ -46,6 +52,12 @@
       - vaultwarden_admin_token
       - restic_password
       - grafana_admin_password
+      # Mullvad WireGuard profile — consumed by the gluetun role. Installed
+      # once on-host from Mullvad's WG config page (private key + assigned
+      # addresses). No tunnel, no torrent traffic — gluetun asserts both
+      # are non-empty before starting.
+      - mullvad_wireguard_private_key
+      - mullvad_wireguard_addresses
 
   # pre_tasks are tagged `always` so they fire even with --tags <role>.
   pre_tasks:
@@ -137,6 +149,21 @@
       tags: [jellyfin, media, services]
     - role: syncthing
       tags: [syncthing, media, services]
+    # Arr stack — keep these together and AFTER traefik/jellyfin/syncthing.
+    # gluetun must converge before qbittorrent + prowlarr (its netns is
+    # their only network path); sonarr/radarr/bazarr depend on traefik only.
+    - role: gluetun
+      tags: [gluetun, vpn, media, services]
+    - role: qbittorrent
+      tags: [qbittorrent, media, services]
+    - role: prowlarr
+      tags: [prowlarr, media, services]
+    - role: sonarr
+      tags: [sonarr, media, services]
+    - role: radarr
+      tags: [radarr, media, services]
+    - role: bazarr
+      tags: [bazarr, media, services]
     - role: n8n
       tags: [n8n, automation, services]
     - role: ollama

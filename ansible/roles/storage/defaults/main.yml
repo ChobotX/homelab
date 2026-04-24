@@ -35,10 +35,15 @@ storage_binds:
   - src: /opt/syncthing/config
     dst: syncthing-config
   # Shared media library. Syncthing writes into incoming/ (rw), jellyfin
-  # mounts the whole tree read-only. Arr roles (future) will write into
-  # movies/ + tv/ directly — layout already compatible.
+  # mounts the whole tree read-only. Sonarr/Radarr write finals into
+  # movies/ + tv/ after import. Layout already compatible with arr stack.
   - src: /opt/media
     dst: media
+  # qBittorrent download target. Kept on the SAME btrfs filesystem as
+  # /opt/media so Sonarr/Radarr can hardlink from torrents/→media/ on
+  # import — no copy, no wasted space, seed continues from original inode.
+  - src: /opt/torrents
+    dst: torrents
   # n8n SQLite + execution history grow with workflow activity — HDD not SSD.
   - src: /opt/n8n/data
     dst: n8n-data

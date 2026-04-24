@@ -9,6 +9,15 @@ backup_paths:
   - /opt/observability/data/grafana
   - /opt/observability/data/alertmanager
   - /opt/n8n/data
+  # Arr stack config — small (< 1 GiB combined), expensive to rebuild (indexer
+  # wiring, download client API keys, library metadata, subtitle prefs).
+  # /opt/torrents + /opt/media themselves are intentionally NOT backed up:
+  # multi-TB and fully reproducible from torrents.
+  - /opt/qbittorrent/config
+  - /opt/prowlarr/config
+  - /opt/sonarr/config
+  - /opt/radarr/config
+  - /opt/bazarr/config
   - /etc/wireguard
   - /etc/ssh
   - "/home/{{ admin_user }}"

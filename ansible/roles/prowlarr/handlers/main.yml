@@ -1,0 +1,6 @@
+---
+- name: Swap prowlarr service
+  ansible.builtin.command:
+    chdir: /opt/prowlarr
+    cmd: docker compose up -d --wait --no-deps --force-recreate prowlarr
+  changed_when: true

@@ -32,6 +32,7 @@ services:
     networks:
       - proxy
       - observability
+      - arr
     labels:
       traefik.enable: "true"
       # Dashboard router (HTTPS only, behind basic auth).
@@ -46,4 +47,6 @@ networks:
   proxy:
     external: true
   observability:
+    external: true
+  arr:
     external: true

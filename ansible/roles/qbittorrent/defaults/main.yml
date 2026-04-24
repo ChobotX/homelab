@@ -1,0 +1,20 @@
+---
+# qBittorrent — download client. Shares gluetun's network namespace so every
+# tracker announce + peer connection exits through the Mullvad tunnel. No
+# own `networks:` or `ports:` — kill the tunnel and qBit goes dark.
+qbittorrent_image: "lscr.io/linuxserver/qbittorrent:5.1.4@sha256:8f7a1da9644340c737e3211ecc910a416d4295076e6b2824a4afcd1f4e3576e2"
+
+# linuxserver.io drops privileges to PUID:PGID inside the container. 1000:1000
+# matches the repo's admin_user convention — same uid owns /opt/torrents and
+# /opt/media on the host so hardlinks from torrents/ → media/ don't cross uid.
+qbittorrent_puid: 1000
+qbittorrent_pgid: 1000
+
+# Host path for downloads. Bind-mounted to /mnt/elements/torrents by the
+# storage role (same btrfs FS as /opt/media → hardlinks possible on import).
+qbittorrent_download_root: /opt/torrents
+
+# Traefik hostname + WebUI port. Both are templated into the gluetun role's
+# env file too (gluetun owns the Traefik labels since qBit sits in its netns).
+qbittorrent_host: "qbit.{{ homelab_domain }}"
+qbittorrent_webui_port: 8080

@@ -1,0 +1,12 @@
+---
+dependencies:
+  - role: traefik
+galaxy_info:
+  role_name: gluetun
+  author: homelab-admin
+  description: Mullvad WireGuard VPN sidecar for qBittorrent + Prowlarr
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]

@@ -1,0 +1,12 @@
+---
+# Bazarr — subtitles for Sonarr + Radarr libraries. Talks to subtitle
+# providers (OpenSubtitles etc.) over plain internet and to Sonarr/Radarr
+# via the arr docker network.
+bazarr_image: "lscr.io/linuxserver/bazarr:1.5.6@sha256:7563f01bf27554df58e10544a4bb83479258883315a31cd1c929293e908144d0"
+
+bazarr_puid: 1000
+bazarr_pgid: 1000
+
+bazarr_host: "bazarr.{{ homelab_domain }}"
+# Read-write: Bazarr writes .srt files next to each video.
+bazarr_media_root: /opt/media

@@ -1,0 +1,43 @@
+---
+# qBittorrent — shares gluetun's netns for killswitch + VPN-only egress.
+#
+# CRITICAL: DO NOT add `networks:` or `ports:` blocks. This container MUST
+# have no network interface of its own — its only route out is gluetun's WG
+# tunnel. Any network or port here creates a second path the kernel can
+# route through, defeating the killswitch. Traefik reaches the WebUI via
+# gluetun's container IP on the arr network, using labels set on gluetun.
+services:
+  qbittorrent:
+    image: ${QBITTORRENT_IMAGE}
+    container_name: qbittorrent
+    restart: unless-stopped
+    # Preference DB + resume data need a moment to flush before SIGKILL.
+    stop_grace_period: 30s
+    # Share gluetun's netns. If gluetun stops or the tunnel drops, qBit has
+    # no path to the internet — killswitch by construction, not by config.
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        # Start only after gluetun's healthcheck passes (tunnel up,
+        # 1.1.1.1:443 reachable via WG). No chance of qBit talking to a
+        # tracker before the tunnel is live.
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      PUID: "${QBITTORRENT_PUID}"
+      PGID: "${QBITTORRENT_PGID}"
+      TZ: "${TZ}"
+      WEBUI_PORT: "${QBITTORRENT_WEBUI_PORT}"
+    volumes:
+      - ./config:/config
+      # Container path MUST match Sonarr/Radarr's path mapping exactly —
+      # otherwise they can't resolve qBit's reported download locations and
+      # hardlink-on-import silently falls back to copy. Both sides use
+      # /data/torrents; the host bind-mount (/opt/torrents → btrfs) is
+      # common to both.
+      - ${QBITTORRENT_DOWNLOAD_ROOT}:/data/torrents
+    # linuxserver.io image ships s6-overlay; /tmp writes happen during init.
+    # Not marking read_only: true — init system mutates /run, /var.

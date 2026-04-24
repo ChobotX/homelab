@@ -1,0 +1,26 @@
+---
+# Prowlarr — shares gluetun's netns. Same killswitch contract as qBittorrent.
+#
+# CRITICAL: DO NOT add `networks:` or `ports:`. Indexer API calls MUST exit
+# via Mullvad. The WebUI is exposed through gluetun's container (arr net,
+# port 9696) via Traefik labels set on the gluetun compose.
+services:
+  prowlarr:
+    image: ${PROWLARR_IMAGE}
+    container_name: prowlarr
+    restart: unless-stopped
+    stop_grace_period: 30s
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      PUID: "${PROWLARR_PUID}"
+      PGID: "${PROWLARR_PGID}"
+      TZ: "${TZ}"
+    volumes:
+      - ./config:/config

@@ -179,10 +179,15 @@
     daemon_reload: true
 
 # Shared docker networks — created here at the end of the infra phase so the
-# downstream app roles (observability, traefik, vaultwarden, homepage) can
-# converge in parallel without each role having to create the same network.
-# Both are declared `external: true` in every compose file that uses them, so
-# they must exist before any of those stacks come up.
+# downstream app roles (observability, traefik, vaultwarden, homepage, arr
+# stack) can converge in parallel without each role having to create the same
+# network. All three are declared `external: true` in every compose file that
+# uses them, so they must exist before any of those stacks come up.
+#
+# The `arr` network is scoped to the Mullvad-fronted download stack (gluetun,
+# qbittorrent, prowlarr) + the *arr apps (sonarr, radarr, bazarr). Isolating
+# it from `proxy` keeps a compromised arr container from pivoting to
+# Vaultwarden/Jellyfin/n8n/etc. Traefik is the only cross-network member.
 - name: Create shared observability docker network
   community.docker.docker_network:
     name: observability
@@ -192,3 +197,15 @@
   community.docker.docker_network:
     name: proxy
     state: present
+
+- name: Create shared arr docker network
+  # Subnet pinned so gluetun's FIREWALL_OUTBOUND_SUBNETS can reference a
+  # stable CIDR. Without a pin, Docker auto-allocates from its bridge pool
+  # and any daemon restart could shift it, silently breaking Traefik →
+  # gluetun routing on the next converge. 172.30.0.0/24 sits outside the
+  # default 172.17-172.21 bridge range so there's no collision risk.
+  community.docker.docker_network:
+    name: arr
+    state: present
+    ipam_config:
+      - subnet: "{{ docker_arr_network_subnet }}"

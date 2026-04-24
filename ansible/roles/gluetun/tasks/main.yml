@@ -1,0 +1,60 @@
+---
+# Gluetun — Mullvad WireGuard sidecar.
+# qBittorrent + Prowlarr share this container's netns, so gluetun MUST be
+# healthy before they come up (their compose uses condition: service_healthy).
+
+- name: Ensure Mullvad WireGuard secret present
+  # Private key is slurped in site.yml pre_tasks. If the secret file is
+  # missing, the slurp defaults it to empty — fail loudly here before we
+  # stand up a container that would silently run without a tunnel.
+  ansible.builtin.assert:
+    that:
+      - mullvad_wireguard_private_key | default('') | length > 0
+      - mullvad_wireguard_addresses | default('') | length > 0
+    fail_msg: |
+      Mullvad WireGuard credentials missing. Create them once on the host:
+        sudo install -m 0400 -T /dev/stdin /etc/homelab/secrets/mullvad_wireguard_private_key
+        sudo install -m 0400 -T /dev/stdin /etc/homelab/secrets/mullvad_wireguard_addresses
+      (Paste the PrivateKey and Address values from Mullvad's WG config page.)
+  no_log: true
+
+- name: Ensure /opt/gluetun layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/gluetun
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/gluetun/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Swap gluetun service
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/gluetun/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap gluetun service
+
+- name: Bring up gluetun stack
+  # First-deploy safety net. `recreate: never` avoids tearing down a healthy
+  # tunnel on unrelated converges — the handler owns every swap with --wait
+  # so the shared netns doesn't briefly go dark.
+  community.docker.docker_compose_v2:
+    project_src: /opt/gluetun
+    state: present
+    pull: policy
+    recreate: never
+    wait: true
+    wait_timeout: 90

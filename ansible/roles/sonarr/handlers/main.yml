@@ -1,0 +1,6 @@
+---
+- name: Swap sonarr service
+  ansible.builtin.command:
+    chdir: /opt/sonarr
+    cmd: docker compose up -d --wait --no-deps --force-recreate sonarr
+  changed_when: true

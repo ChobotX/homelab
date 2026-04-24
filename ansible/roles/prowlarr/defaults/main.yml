@@ -1,0 +1,14 @@
+---
+# Prowlarr — indexer manager. Queries tracker + public-indexer APIs on behalf
+# of Sonarr/Radarr. Runs inside gluetun's netns so indexer requests (and any
+# captcha/cloudflare challenge flows) exit from the Mullvad IP, not the
+# homelab's public IP.
+prowlarr_image: "lscr.io/linuxserver/prowlarr:2.3.5@sha256:c5de2a8758a05594319263e7691c1dce56899442ed1720d6eca216c0958f4caf"
+
+prowlarr_puid: 1000
+prowlarr_pgid: 1000
+
+# Traefik hostname + WebUI port. Templated into the gluetun role's env file
+# too (gluetun owns the Traefik labels since Prowlarr sits in its netns).
+prowlarr_host: "prowlarr.{{ homelab_domain }}"
+prowlarr_webui_port: 9696

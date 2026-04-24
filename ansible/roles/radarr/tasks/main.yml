@@ -1,0 +1,45 @@
+---
+- name: Ensure /opt/radarr layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ radarr_puid }}"
+    group: "{{ radarr_pgid }}"
+    mode: "0755"
+  loop:
+    - /opt/radarr
+    - /opt/radarr/config
+
+- name: Ensure movies media subdir exists (HDD, via storage bind)
+  ansible.builtin.file:
+    path: "{{ radarr_media_root }}/movies"
+    state: directory
+    owner: "{{ radarr_puid }}"
+    group: "{{ radarr_pgid }}"
+    mode: "0755"
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/radarr/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Swap radarr service
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/radarr/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap radarr service
+
+- name: Bring up Radarr stack
+  community.docker.docker_compose_v2:
+    project_src: /opt/radarr
+    state: present
+    pull: policy
+    recreate: never

@@ -1,0 +1,10 @@
+---
+# Radarr — movie library manager. Same architecture as Sonarr.
+radarr_image: "lscr.io/linuxserver/radarr:6.1.1@sha256:b01097ad2d948c9f5eca39eb60bb529e2e55b0738c4bf7db09383bef0abab59d"
+
+radarr_puid: 1000
+radarr_pgid: 1000
+
+radarr_host: "radarr.{{ homelab_domain }}"
+radarr_download_root: /opt/torrents
+radarr_media_root: /opt/media

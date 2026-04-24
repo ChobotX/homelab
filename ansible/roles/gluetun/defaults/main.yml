@@ -1,0 +1,43 @@
+---
+# Gluetun — VPN sidecar running Mullvad WireGuard. qBittorrent + Prowlarr share
+# this container's netns (network_mode: service:gluetun) so ALL their traffic
+# — torrent peers, tracker announces, indexer queries, DNS — exits through
+# the Mullvad tunnel. Killswitch via FIREWALL=on: if the WG handshake drops,
+# the shared netns has zero usable route out and the sharing containers hang
+# instead of leaking.
+#
+# Upstream: https://github.com/qdm12/gluetun-wiki
+# Releases: https://github.com/qdm12/gluetun/releases
+gluetun_image: "qmcgaw/gluetun:v3.40.4@sha256:e10584de1f82d8999e5e6c3111901d9d56a2eed21151fb96af060f390bbdfba8"
+
+# Mullvad WireGuard server selection. Comma-separated list of city names, as
+# shown in `curl https://api.mullvad.net/public/relays/wireguard/v2/`. Leaving
+# this short (one or two close-ish cities) keeps latency bounded; gluetun
+# picks any matching relay on startup and auto-rotates on handshake failure.
+gluetun_server_cities: "Copenhagen"
+
+# Drop IPv6 at the gluetun firewall. The homelab has no v6 connectivity and
+# Mullvad's WG config we slurp (ipv4-only above) wouldn't route v6 anyway —
+# explicitly blocking it closes the door on container-initiated v6 that could
+# fall through to host v6 routing.
+gluetun_block_ipv6: "on"
+
+# DNS-over-TLS inside the tunnel. Default resolver is Cloudflare 1.1.1.1
+# (shipped with gluetun). Apps in the shared netns resolve via 127.0.0.1 →
+# gluetun's local DoT proxy → Cloudflare over WG. No /etc/resolv.conf leak
+# to host DNS.
+gluetun_dot: "on"
+
+# Healthcheck target — must be reachable ONLY when the tunnel is up. 1.1.1.1
+# on 443 is gluetun's default and survives Mullvad DNS hiccups (pure IP).
+gluetun_health_target_address: "1.1.1.1:443"
+
+# How long gluetun waits after container start before declaring unhealthy.
+# Mullvad WG handshake is usually sub-second, but on first boot (post-reboot,
+# fresh IP lease) give it headroom before the depends_on gate fails.
+gluetun_health_vpn_duration_initial: "60s"
+
+# Traefik hostnames + UI ports for the containers sharing this netns live in
+# the qbittorrent + prowlarr role defaults (their owning roles). ansible-lint
+# requires each role's defaults file to only define vars with that role's
+# prefix; gluetun just references them at template time.

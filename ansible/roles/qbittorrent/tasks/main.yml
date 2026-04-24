@@ -1,0 +1,61 @@
+---
+# qBittorrent — sits inside gluetun's netns. The gluetun role must have
+# converged first (dependencies: gluetun in meta/main.yml).
+
+- name: Ensure /opt/qbittorrent layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ qbittorrent_puid }}"
+    group: "{{ qbittorrent_pgid }}"
+    mode: "0755"
+  loop:
+    - /opt/qbittorrent
+    - /opt/qbittorrent/config
+
+- name: Ensure download-root subdirs exist (HDD, via storage bind)
+  # /opt/torrents itself is created + bind-mounted by the storage role.
+  # Subdirs land on the btrfs target so writes go to the HDD, and
+  # Sonarr/Radarr category hand-off writes here before hardlink into
+  # /opt/media/{tv,movies}.
+  ansible.builtin.file:
+    path: "{{ qbittorrent_download_root }}/{{ item }}"
+    state: directory
+    owner: "{{ qbittorrent_puid }}"
+    group: "{{ qbittorrent_pgid }}"
+    mode: "0755"
+  loop:
+    - tv
+    - movies
+    - incomplete
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/qbittorrent/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Swap qbittorrent service
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/qbittorrent/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap qbittorrent service
+
+- name: Bring up qBittorrent stack
+  # --wait catches first-boot healthcheck (qBit depends on gluetun healthy;
+  # if gluetun never goes healthy, this surfaces the failure loudly instead
+  # of leaving a zombie Exited container behind).
+  community.docker.docker_compose_v2:
+    project_src: /opt/qbittorrent
+    state: present
+    pull: policy
+    recreate: never
+    wait: true
+    wait_timeout: 120

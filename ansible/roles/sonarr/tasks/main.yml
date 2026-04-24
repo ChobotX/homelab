@@ -1,0 +1,45 @@
+---
+- name: Ensure /opt/sonarr layout
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ sonarr_puid }}"
+    group: "{{ sonarr_pgid }}"
+    mode: "0755"
+  loop:
+    - /opt/sonarr
+    - /opt/sonarr/config
+
+- name: Ensure TV media subdir exists (HDD, via storage bind)
+  ansible.builtin.file:
+    path: "{{ sonarr_media_root }}/tv"
+    state: directory
+    owner: "{{ sonarr_puid }}"
+    group: "{{ sonarr_pgid }}"
+    mode: "0755"
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/sonarr/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Swap sonarr service
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/sonarr/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap sonarr service
+
+- name: Bring up Sonarr stack
+  community.docker.docker_compose_v2:
+    project_src: /opt/sonarr
+    state: present
+    pull: policy
+    recreate: never

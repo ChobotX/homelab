@@ -1,0 +1,6 @@
+---
+- name: Swap bazarr service
+  ansible.builtin.command:
+    chdir: /opt/bazarr
+    cmd: docker compose up -d --wait --no-deps --force-recreate bazarr
+  changed_when: true

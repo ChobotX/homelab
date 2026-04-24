@@ -1,0 +1,16 @@
+---
+# Sonarr — TV library manager. Direct internet access (TMDB/TheTVDB metadata
+# only — harmless to the homelab IP). Talks to Prowlarr and qBittorrent via
+# gluetun's arr-network container IP on the docker bridge, never over WAN.
+sonarr_image: "lscr.io/linuxserver/sonarr:4.0.17@sha256:e6c9a091735fede0c2a205c69e7d4c2f0188eaf2bec7e42d8a26c017e5f2a910"
+
+sonarr_puid: 1000
+sonarr_pgid: 1000
+
+sonarr_host: "sonarr.{{ homelab_domain }}"
+
+# Must match qBittorrent's download root path so category hand-off +
+# hardlink-on-import work. Sonarr reads qBit's reported path verbatim.
+sonarr_download_root: /opt/torrents
+# TV library root. Sonarr renames + hardlinks imports into here.
+sonarr_media_root: /opt/media

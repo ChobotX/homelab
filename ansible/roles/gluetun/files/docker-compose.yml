@@ -1,0 +1,80 @@
+---
+# Gluetun — Mullvad WireGuard VPN gateway.
+# qBittorrent + Prowlarr share this container's netns (network_mode:
+# service:gluetun in their own compose files). If this container stops, both
+# lose all network. If the WG tunnel drops, FIREWALL=on means both hang —
+# no packet escapes unencrypted.
+#
+# DO NOT add host port mappings for qBit/Prowlarr anywhere — the UIs are
+# published on THIS container's arr-network interface via `ports:` below,
+# and Traefik labels route to them as gluetun:PORT over the arr network.
+services:
+  gluetun:
+    image: ${GLUETUN_IMAGE}
+    container_name: gluetun
+    restart: unless-stopped
+    # WG handshake + tunnel teardown need a moment. Too short and the sidecar
+    # containers may reconnect against a half-dead netns on swap.
+    stop_grace_period: 30s
+    # Tunnel interface setup requires NET_ADMIN + /dev/net/tun. Nothing else.
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    # No host ports — Traefik reaches the UI ports over the arr docker
+    # network as gluetun:${PORT}. Any host-port binding here would also
+    # bypass the wg-only middleware (UFW gates wg0, not the Docker NAT path).
+    networks:
+      - arr
+      - observability
+    healthcheck:
+      # gluetun ships a built-in healthcheck binary; it probes
+      # HEALTH_TARGET_ADDRESS through the tunnel. Exit 0 only when the WG
+      # handshake is current and 1.1.1.1:443 is reachable via the tunnel —
+      # exactly the condition qBit/Prowlarr's depends_on gate needs.
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "arr"
+
+      # qBittorrent WebUI — served from inside gluetun's netns.
+      traefik.http.routers.qbittorrent.rule: "Host(`${QBITTORRENT_HOST}`)"
+      traefik.http.routers.qbittorrent.entrypoints: "websecure"
+      traefik.http.routers.qbittorrent.tls: "true"
+      traefik.http.routers.qbittorrent.tls.certresolver: "cloudflare"
+      traefik.http.routers.qbittorrent.service: "qbittorrent"
+      # wg-only + dashboard-auth + security-headers. Double-gate the UI — qBit's
+      # own auth is the last line, but the WG tunnel + htpasswd come first.
+      traefik.http.routers.qbittorrent.middlewares: "wg-only@file,dashboard-auth@file,security-headers@file"
+      traefik.http.services.qbittorrent.loadbalancer.server.port: "${QBITTORRENT_WEBUI_PORT}"
+      # qBit's root path returns the WebUI HTML (200 OK) when up — suitable
+      # active healthcheck target for sub-second Traefik swap buffering.
+      traefik.http.services.qbittorrent.loadbalancer.healthcheck.path: "/"
+      traefik.http.services.qbittorrent.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.qbittorrent.loadbalancer.healthcheck.timeout: "2s"
+
+      # Prowlarr WebUI — same netns, different port.
+      traefik.http.routers.prowlarr.rule: "Host(`${PROWLARR_HOST}`)"
+      traefik.http.routers.prowlarr.entrypoints: "websecure"
+      traefik.http.routers.prowlarr.tls: "true"
+      traefik.http.routers.prowlarr.tls.certresolver: "cloudflare"
+      traefik.http.routers.prowlarr.service: "prowlarr"
+      traefik.http.routers.prowlarr.middlewares: "wg-only@file,dashboard-auth@file,security-headers@file"
+      traefik.http.services.prowlarr.loadbalancer.server.port: "${PROWLARR_WEBUI_PORT}"
+      traefik.http.services.prowlarr.loadbalancer.healthcheck.path: "/ping"
+      traefik.http.services.prowlarr.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.prowlarr.loadbalancer.healthcheck.timeout: "2s"
+
+networks:
+  arr:
+    external: true
+  observability:
+    external: true

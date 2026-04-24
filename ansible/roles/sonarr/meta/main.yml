@@ -1,0 +1,12 @@
+---
+dependencies:
+  - role: traefik
+galaxy_info:
+  role_name: sonarr
+  author: homelab-admin
+  description: Sonarr TV library manager (direct, on arr network)
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]

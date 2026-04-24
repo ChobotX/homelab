@@ -7,3 +7,9 @@ docker_gpg_fingerprint: "9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
 # Releases: https://github.com/Wowu/docker-rollout/releases
 docker_rollout_version: "v0.13"
 docker_rollout_sha256: "fa0df004de84747142cb627c55210aaa914bbae76666e7b95a2ac46805d81a84"
+
+# Pinned subnet for the `arr` docker network — referenced by gluetun's
+# FIREWALL_OUTBOUND_SUBNETS so Traefik/sonarr/radarr/bazarr can reach the
+# qBittorrent + Prowlarr UIs that live inside gluetun's netns. Sits outside
+# Docker's default 172.17-172.21 bridge pool to avoid allocator collisions.
+docker_arr_network_subnet: "172.30.0.0/24"

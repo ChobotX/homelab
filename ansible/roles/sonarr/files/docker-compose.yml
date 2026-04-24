@@ -1,0 +1,51 @@
+---
+# Sonarr — TV library manager. On `arr` network (talks to gluetun:9696 for
+# Prowlarr API + gluetun:8080 for qBittorrent API). Direct metadata fetch to
+# TMDB/TheTVDB is intentional — no reason to route public metadata via VPN.
+services:
+  sonarr:
+    image: ${SONARR_IMAGE}
+    container_name: sonarr
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      PUID: "${SONARR_PUID}"
+      PGID: "${SONARR_PGID}"
+      TZ: "${TZ}"
+    volumes:
+      - ./config:/config
+      # Same container paths as qBit. Hardlinks qBit→Sonarr require not just
+      # same FS but same container path so Sonarr can resolve qBit's
+      # reported /data/torrents/... strings to actual files.
+      - ${SONARR_DOWNLOAD_ROOT}:/data/torrents
+      - ${SONARR_MEDIA_ROOT}:/data/media
+    networks:
+      - arr
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8989/ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "arr"
+
+      traefik.http.routers.sonarr.rule: "Host(`${SONARR_HOST}`)"
+      traefik.http.routers.sonarr.entrypoints: "websecure"
+      traefik.http.routers.sonarr.tls: "true"
+      traefik.http.routers.sonarr.tls.certresolver: "cloudflare"
+      traefik.http.routers.sonarr.service: "sonarr"
+      traefik.http.routers.sonarr.middlewares: "wg-only@file,dashboard-auth@file,security-headers@file"
+      traefik.http.services.sonarr.loadbalancer.server.port: "8989"
+      traefik.http.services.sonarr.loadbalancer.healthcheck.path: "/ping"
+      traefik.http.services.sonarr.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.sonarr.loadbalancer.healthcheck.timeout: "2s"
+
+networks:
+  arr:
+    external: true

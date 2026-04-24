@@ -1,0 +1,6 @@
+---
+- name: Swap radarr service
+  ansible.builtin.command:
+    chdir: /opt/radarr
+    cmd: docker compose up -d --wait --no-deps --force-recreate radarr
+  changed_when: true

@@ -1,0 +1,47 @@
+---
+# Radarr — movie library manager. Direct on arr network (talks to gluetun
+# for Prowlarr + qBit APIs). TMDB metadata over plain internet is fine.
+services:
+  radarr:
+    image: ${RADARR_IMAGE}
+    container_name: radarr
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      PUID: "${RADARR_PUID}"
+      PGID: "${RADARR_PGID}"
+      TZ: "${TZ}"
+    volumes:
+      - ./config:/config
+      - ${RADARR_DOWNLOAD_ROOT}:/data/torrents
+      - ${RADARR_MEDIA_ROOT}:/data/media
+    networks:
+      - arr
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:7878/ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "arr"
+
+      traefik.http.routers.radarr.rule: "Host(`${RADARR_HOST}`)"
+      traefik.http.routers.radarr.entrypoints: "websecure"
+      traefik.http.routers.radarr.tls: "true"
+      traefik.http.routers.radarr.tls.certresolver: "cloudflare"
+      traefik.http.routers.radarr.service: "radarr"
+      traefik.http.routers.radarr.middlewares: "wg-only@file,dashboard-auth@file,security-headers@file"
+      traefik.http.services.radarr.loadbalancer.server.port: "7878"
+      traefik.http.services.radarr.loadbalancer.healthcheck.path: "/ping"
+      traefik.http.services.radarr.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.radarr.loadbalancer.healthcheck.timeout: "2s"
+
+networks:
+  arr:
+    external: true

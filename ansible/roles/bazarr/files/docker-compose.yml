@@ -1,0 +1,44 @@
+---
+# Bazarr — subtitle manager. Reads from Sonarr/Radarr APIs over `arr`
+# network; writes .srt files into the media library alongside videos.
+services:
+  bazarr:
+    image: ${BAZARR_IMAGE}
+    container_name: bazarr
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      PUID: "${BAZARR_PUID}"
+      PGID: "${BAZARR_PGID}"
+      TZ: "${TZ}"
+    volumes:
+      - ./config:/config
+      - ${BAZARR_MEDIA_ROOT}:/data/media
+    networks:
+      - arr
+    healthcheck:
+      # Bazarr has no /ping endpoint; root returns 200 when serving the UI.
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:6767/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "arr"
+
+      traefik.http.routers.bazarr.rule: "Host(`${BAZARR_HOST}`)"
+      traefik.http.routers.bazarr.entrypoints: "websecure"
+      traefik.http.routers.bazarr.tls: "true"
+      traefik.http.routers.bazarr.tls.certresolver: "cloudflare"
+      traefik.http.routers.bazarr.service: "bazarr"
+      traefik.http.routers.bazarr.middlewares: "wg-only@file,dashboard-auth@file,security-headers@file"
+      traefik.http.services.bazarr.loadbalancer.server.port: "6767"
+
+networks:
+  arr:
+    external: true
