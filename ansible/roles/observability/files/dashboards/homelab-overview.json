@@ -707,9 +707,59 @@
       ]
     },
     {
+      "type": "timeseries",
+      "title": "Disk I/O (SSD vs HDD)",
+      "description": "Read/write throughput. HDD = /dev/sdb (btrfs /mnt/elements). SSD = everything else (root OS + docker overlays).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 57 },
+      "id": 45,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "SSD read" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }] },
+          { "matcher": { "id": "byName", "options": "SSD write" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "super-light-blue" } }] },
+          { "matcher": { "id": "byName", "options": "HDD read" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "HDD write" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "super-light-orange" } }] }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["mean", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(node_disk_read_bytes_total{device!~\"sdb|loop.*|dm-.*|sr.*|zram.*|fd.*\"}[$__rate_interval]))",
+          "legendFormat": "SSD read",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(node_disk_written_bytes_total{device!~\"sdb|loop.*|dm-.*|sr.*|zram.*|fd.*\"}[$__rate_interval]))",
+          "legendFormat": "SSD write",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(node_disk_read_bytes_total{device=\"sdb\"}[$__rate_interval]))",
+          "legendFormat": "HDD read",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(node_disk_written_bytes_total{device=\"sdb\"}[$__rate_interval]))",
+          "legendFormat": "HDD write",
+          "refId": "D"
+        }
+      ]
+    },
+    {
       "type": "row",
       "title": "Network",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 57 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 65 },
       "id": 105,
       "collapsed": false,
       "panels": []
@@ -718,7 +768,7 @@
       "type": "timeseries",
       "title": "Per-interface throughput",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 58 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 66 },
       "id": 55,
       "fieldConfig": {
         "defaults": {
@@ -754,6 +804,6 @@
   "timezone": "",
   "title": "Homelab Overview",
   "uid": "homelab-overview",
-  "version": 14,
+  "version": 15,
   "weekStart": ""
 }
