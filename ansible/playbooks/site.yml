@@ -17,9 +17,9 @@
 #   vaultwarden    → secret vault behind Traefik
 #   jellyfin       → media server behind Traefik (HW transcode if /dev/dri present)
 #   syncthing      → remote media ingest (sync protocol bound to WG IP)
-#   gluetun        → Mullvad WG sidecar (killswitch netns for qbit + prowlarr)
-#   qbittorrent    → download client inside gluetun netns (all traffic via VPN)
-#   prowlarr       → indexer manager inside gluetun netns
+#   qbittorrent    → config dirs + role-default vars (container in gluetun stack)
+#   prowlarr       → config dir + role-default vars (container in gluetun stack)
+#   gluetun        → Mullvad WG + brings up the qbit/prowlarr/gluetun trio
 #   sonarr         → TV library manager (direct, arr docker network)
 #   radarr         → movie library manager (direct, arr docker network)
 #   bazarr         → subtitle manager (direct, arr docker network)
@@ -150,14 +150,16 @@
     - role: syncthing
       tags: [syncthing, media, services]
     # Arr stack — keep these together and AFTER traefik/jellyfin/syncthing.
-    # gluetun must converge before qbittorrent + prowlarr (its netns is
-    # their only network path); sonarr/radarr/bazarr depend on traefik only.
-    - role: gluetun
-      tags: [gluetun, vpn, media, services]
+    # qbittorrent + prowlarr roles only own data dirs + role-default vars.
+    # gluetun role owns the single compose project that brings up all three
+    # services (one project required for service:gluetun + healthy-gate).
+    # Order: dirs first, then compose-up.
     - role: qbittorrent
       tags: [qbittorrent, media, services]
     - role: prowlarr
       tags: [prowlarr, media, services]
+    - role: gluetun
+      tags: [gluetun, vpn, media, services]
     - role: sonarr
       tags: [sonarr, media, services]
     - role: radarr

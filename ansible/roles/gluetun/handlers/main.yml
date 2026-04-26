@@ -1,16 +1,10 @@
 ---
-# Gluetun swap is more sensitive than a normal compose swap: stopping the
-# container destroys the netns, which drags qBittorrent + Prowlarr down with
-# it (they share the netns via network_mode: service:gluetun). --wait gates
-# on gluetun's own healthcheck (tunnel up) so the sidecar containers aren't
-# restarted against a half-initialised VPN.
-#
-# qBit/Prowlarr restart themselves when gluetun restarts via their own
-# `restart: unless-stopped` + docker's network_mode re-attachment logic;
-# no explicit swap needed here for them.
+# Single compose project covers gluetun + qbittorrent + prowlarr. Recreating
+# without --no-deps lets compose cascade: gluetun comes back first, healthcheck
+# blocks until tunnel up, then qBit + Prowlarr start in the new netns.
 
-- name: Swap gluetun service
+- name: Swap gluetun stack
   ansible.builtin.command:
     chdir: /opt/gluetun
-    cmd: docker compose up -d --wait --no-deps --force-recreate gluetun
+    cmd: docker compose up -d --wait --wait-timeout 120 --force-recreate
   changed_when: true

@@ -146,10 +146,17 @@ if [ "$shared" = true ]; then
   gluetun=true; qbittorrent=true; prowlarr=true; sonarr=true; radarr=true; bazarr=true
 fi
 
-# gluetun owns the netns for qbittorrent + prowlarr — a gluetun change forces
-# both sidecars to recreate so they re-attach cleanly to the (potentially new)
-# netns. Without this cascade, a gluetun-only commit would leave qBit/Prowlarr
-# pointing at a stale netns reference if Docker rebuilt it.
+# Vpn-stack cascade — gluetun + qbittorrent + prowlarr live in ONE compose
+# project (owned by the gluetun role). The qbit/prowlarr roles only own
+# data dirs + role-default vars (image, host, port, puid). A change in
+# either side must trigger BOTH directions:
+#   1. qbit/prowlarr defaults bumped → gluetun re-renders /opt/gluetun/.env
+#      → handler swaps the trio with the new image/var.
+#   2. gluetun changed → qbit/prowlarr roles reconverge their data dirs
+#      before the compose recreate touches them.
+if [ "$qbittorrent" = true ] || [ "$prowlarr" = true ]; then
+  gluetun=true
+fi
 if [ "$gluetun" = true ]; then
   qbittorrent=true
   prowlarr=true

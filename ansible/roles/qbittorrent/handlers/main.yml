@@ -1,6 +1,0 @@
----
-- name: Swap qbittorrent service
-  ansible.builtin.command:
-    chdir: /opt/qbittorrent
-    cmd: docker compose up -d --wait --no-deps --force-recreate qbittorrent
-  changed_when: true

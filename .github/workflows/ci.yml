@@ -513,11 +513,13 @@ jobs:
           tags: syncthing
 
   deploy-gluetun:
-    # Mullvad WireGuard sidecar. Must converge before qbittorrent + prowlarr
-    # (their containers share its netns). Traefik labels for the qBit + Prowlarr
-    # WebUIs sit on this container so it also waits on traefik.
+    # Brings up the gluetun + qbittorrent + prowlarr compose project.
+    # Waits on deploy-qbittorrent + deploy-prowlarr so their config dirs
+    # (/opt/qbittorrent/config, /opt/prowlarr/config) and the torrents
+    # subdirs exist before compose binds them. Also waits on traefik
+    # since gluetun's container labels need traefik running to take effect.
     name: deploy (gluetun)
-    needs: [deploy-docker, deploy-ufw, deploy-traefik, changes]
+    needs: [deploy-docker, deploy-ufw, deploy-traefik, deploy-qbittorrent, deploy-prowlarr, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -534,10 +536,11 @@ jobs:
           tags: gluetun
 
   deploy-qbittorrent:
-    # Inside gluetun's netns. Must wait for gluetun healthy before recreating;
-    # depends_on: service_healthy in compose enforces it at container level too.
+    # Owns /opt/qbittorrent/config + /opt/torrents/{tv,movies,incomplete}
+    # dirs only — the container runs in gluetun's compose project. Must
+    # converge before deploy-gluetun so the bind sources exist.
     name: deploy (qbittorrent)
-    needs: [deploy-gluetun, changes]
+    needs: [deploy-docker, deploy-ufw, deploy-storage, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -554,9 +557,10 @@ jobs:
           tags: qbittorrent
 
   deploy-prowlarr:
-    # Inside gluetun's netns alongside qBittorrent.
+    # Owns /opt/prowlarr/config dir only — container runs in gluetun's
+    # compose project. Converges before deploy-gluetun.
     name: deploy (prowlarr)
-    needs: [deploy-gluetun, changes]
+    needs: [deploy-docker, deploy-ufw, deploy-storage, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')

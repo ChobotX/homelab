@@ -1,20 +1,28 @@
 ---
-# Gluetun — Mullvad WireGuard VPN gateway.
-# qBittorrent + Prowlarr share this container's netns (network_mode:
-# service:gluetun in their own compose files). If this container stops, both
-# lose all network. If the WG tunnel drops, FIREWALL=on means both hang —
-# no packet escapes unencrypted.
+# Gluetun + qBittorrent + Prowlarr — single compose project.
 #
-# DO NOT add host port mappings for qBit/Prowlarr anywhere — the UIs are
-# published on THIS container's arr-network interface via `ports:` below,
-# and Traefik labels route to them as gluetun:PORT over the arr network.
+# Why one project (not three)? Cross-project compose can't express
+# `network_mode: service:X` or `depends_on: condition: service_healthy`,
+# and the cross-project workaround `network_mode: container:X` doesn't
+# auto-rebind sidecars when X recreates → silent disconnect on every
+# image bump. One project gives us the healthy-gate + auto-recreate cascade
+# Docker compose was designed for.
+#
+# Killswitch contract: qBittorrent + Prowlarr have no `networks:` and no
+# `ports:` of their own. Their only path out is gluetun's WG tunnel.
+# FIREWALL=on inside gluetun means a tunnel drop = no usable route in the
+# shared netns = sidecars hang instead of leaking.
+#
+# DO NOT add host port mappings on qBit/Prowlarr — the UIs are published
+# on gluetun's arr-network interface, and Traefik labels (set on gluetun
+# itself) route to them as gluetun:PORT over `arr`.
 services:
   gluetun:
     image: ${GLUETUN_IMAGE}
     container_name: gluetun
     restart: unless-stopped
-    # WG handshake + tunnel teardown need a moment. Too short and the sidecar
-    # containers may reconnect against a half-dead netns on swap.
+    # WG handshake + tunnel teardown need a moment. Too short and the
+    # sidecars may reconnect against a half-dead netns on swap.
     stop_grace_period: 30s
     # Tunnel interface setup requires NET_ADMIN + /dev/net/tun. Nothing else.
     cap_add:
@@ -25,17 +33,13 @@ services:
       - no-new-privileges:true
     env_file:
       - .env
-    # No host ports — Traefik reaches the UI ports over the arr docker
-    # network as gluetun:${PORT}. Any host-port binding here would also
-    # bypass the wg-only middleware (UFW gates wg0, not the Docker NAT path).
     networks:
       - arr
       - observability
     healthcheck:
-      # gluetun ships a built-in healthcheck binary; it probes
-      # HEALTH_TARGET_ADDRESS through the tunnel. Exit 0 only when the WG
-      # handshake is current and 1.1.1.1:443 is reachable via the tunnel —
-      # exactly the condition qBit/Prowlarr's depends_on gate needs.
+      # gluetun's built-in healthcheck probes HEALTH_TARGET_ADDRESS through
+      # the tunnel — exit 0 only when WG is up + 1.1.1.1:443 reachable. This
+      # is exactly the gate qBit/Prowlarr's depends_on uses below.
       test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
       interval: 30s
       timeout: 10s
@@ -51,12 +55,10 @@ services:
       traefik.http.routers.qbittorrent.tls: "true"
       traefik.http.routers.qbittorrent.tls.certresolver: "cloudflare"
       traefik.http.routers.qbittorrent.service: "qbittorrent"
-      # wg-only + dashboard-auth + security-headers. Double-gate the UI — qBit's
-      # own auth is the last line, but the WG tunnel + htpasswd come first.
+      # wg-only + dashboard-auth + security-headers. qBit's own login is the
+      # last line of defence; the WG tunnel + htpasswd come first.
       traefik.http.routers.qbittorrent.middlewares: "wg-only@file,dashboard-auth@file,security-headers@file"
       traefik.http.services.qbittorrent.loadbalancer.server.port: "${QBITTORRENT_WEBUI_PORT}"
-      # qBit's root path returns the WebUI HTML (200 OK) when up — suitable
-      # active healthcheck target for sub-second Traefik swap buffering.
       traefik.http.services.qbittorrent.loadbalancer.healthcheck.path: "/"
       traefik.http.services.qbittorrent.loadbalancer.healthcheck.interval: "5s"
       traefik.http.services.qbittorrent.loadbalancer.healthcheck.timeout: "2s"
@@ -72,6 +74,56 @@ services:
       traefik.http.services.prowlarr.loadbalancer.healthcheck.path: "/ping"
       traefik.http.services.prowlarr.loadbalancer.healthcheck.interval: "5s"
       traefik.http.services.prowlarr.loadbalancer.healthcheck.timeout: "2s"
+
+  qbittorrent:
+    image: ${QBITTORRENT_IMAGE}
+    container_name: qbittorrent
+    restart: unless-stopped
+    stop_grace_period: 30s
+    # Same compose project → service:gluetun resolves correctly. depends_on
+    # gates start until gluetun's healthcheck reports tunnel up. compose
+    # also auto-recreates qbittorrent when gluetun is recreated, fixing the
+    # netns-rebind problem the cross-project setup had.
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      PUID: "${QBITTORRENT_PUID}"
+      PGID: "${QBITTORRENT_PGID}"
+      TZ: "${TZ}"
+      WEBUI_PORT: "${QBITTORRENT_WEBUI_PORT}"
+    volumes:
+      # Absolute paths — config dirs are owned by the qbittorrent role;
+      # /opt/torrents is bind-mounted to /mnt/elements/torrents (HDD) by
+      # the storage role. Same FS as /opt/media so Sonarr/Radarr's
+      # hardlink-on-import works.
+      - /opt/qbittorrent/config:/config
+      - /opt/torrents:/data/torrents
+
+  prowlarr:
+    image: ${PROWLARR_IMAGE}
+    container_name: prowlarr
+    restart: unless-stopped
+    stop_grace_period: 30s
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      PUID: "${PROWLARR_PUID}"
+      PGID: "${PROWLARR_PGID}"
+      TZ: "${TZ}"
+    volumes:
+      - /opt/prowlarr/config:/config
 
 networks:
   arr:

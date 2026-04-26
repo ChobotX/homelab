@@ -1,5 +1,6 @@
 ---
-# Prowlarr — inside gluetun's netns (meta: depends on gluetun).
+# Prowlarr — config dir only. The container lives in gluetun role's compose
+# project (shared netns + healthy-gate require single-project compose).
 
 - name: Ensure /opt/prowlarr layout
   ansible.builtin.file:
@@ -11,31 +12,3 @@
   loop:
     - /opt/prowlarr
     - /opt/prowlarr/config
-
-- name: Template .env
-  ansible.builtin.template:
-    src: env.j2
-    dest: /opt/prowlarr/.env
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
-  notify: Swap prowlarr service
-
-- name: Deploy docker-compose.yml
-  ansible.builtin.copy:
-    src: docker-compose.yml
-    dest: /opt/prowlarr/docker-compose.yml
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Swap prowlarr service
-
-- name: Bring up Prowlarr stack
-  community.docker.docker_compose_v2:
-    project_src: /opt/prowlarr
-    state: present
-    pull: policy
-    recreate: never
-    wait: true
-    wait_timeout: 120
