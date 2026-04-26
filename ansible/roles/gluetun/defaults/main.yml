@@ -22,16 +22,17 @@ gluetun_server_cities: "Copenhagen"
 # fall through to host v6 routing.
 gluetun_block_ipv6: "on"
 
-# DNS-over-TLS DISABLED. With DOT=on, gluetun replaces /etc/resolv.conf
-# in the shared netns with 127.0.0.1 (its own local DoT proxy), which
-# bypasses Docker's embedded DNS at 127.0.0.11 — so Prowlarr-in-netns
-# can't resolve other container names like `sonarr` or `radarr`. Setting
-# DOT=off lets Docker DNS handle name resolution; queries still exit
-# only via the Mullvad tunnel because FIREWALL=on blocks every other
-# egress path. Upstream resolver sees the Mullvad IP, not the homelab's
-# (privacy posture preserved — only difference is plain DNS vs DoT
-# inside an already-encrypted WG tunnel).
+# DNS-over-TLS DISABLED + DNS_ADDRESS pointed at Docker's embedded DNS
+# (127.0.0.11). With DOT=on gluetun rewrites resolv.conf to 127.0.0.1
+# (its own DoT proxy), which a) hides Docker DNS from the netns so
+# Prowlarr-in-netns can't resolve `sonarr`/`radarr`, and b) plays no
+# role since the only egress is the WG tunnel anyway. Off + Docker DNS:
+#   * Container-name lookups (sonarr, radarr, gluetun) resolve locally
+#   * External lookups forward through Docker DNS → daemon defaults →
+#     out via gluetun's WG tunnel (FIREWALL=on blocks every other path)
+#   * Cloudflare/upstream see the Mullvad IP — privacy posture preserved
 gluetun_dot: "off"
+gluetun_dns_address: "127.0.0.11"
 
 # Healthcheck target — must be reachable ONLY when the tunnel is up. 1.1.1.1
 # on 443 is gluetun's default and survives Mullvad DNS hiccups (pure IP).
