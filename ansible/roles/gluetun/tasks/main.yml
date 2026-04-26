@@ -36,7 +36,7 @@
     group: root
     mode: "0600"
   no_log: true
-  notify: Swap gluetun service
+  notify: Swap gluetun stack
 
 - name: Deploy docker-compose.yml
   ansible.builtin.copy:
@@ -45,7 +45,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify: Swap gluetun service
+  notify: Swap gluetun stack
 
 - name: Bring up gluetun stack
   # First-deploy safety net. `recreate: never` avoids tearing down a healthy
