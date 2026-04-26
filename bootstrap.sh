@@ -150,10 +150,13 @@ valid_email      "$ALERTMANAGER_EMAIL_TO"          || die "ALERTMANAGER_EMAIL_TO
 : "${GITHUB_RUNNER_LABELS:=self-hosted,linux,homelab}"
 : "${GITHUB_RUNNER_DIR:=/opt/actions-runner}"
 # Parallel instances of the JIT runner. Install dirs: ${GITHUB_RUNNER_DIR}-1..N.
-# Default 4 covers the ci.yml job mix: lint + docker-test + prewarm-images run
-# concurrently before the gate, then the deploy DAG fans out observability /
-# traefik / vaultwarden / homepage across up to 4 runners after deploy-infra.
-: "${GITHUB_RUNNER_INSTANCES:=4}"
+# Default 12 covers the post-arr-stack DAG: lint + docker-test + prewarm run
+# concurrently, then the deploy fan-out spreads observability / traefik /
+# vaultwarden / jellyfin / syncthing / homepage / n8n / gluetun / sonarr /
+# radarr / bazarr / ollama across up to 12 runners after deploy-infra.
+# CPU sits idle most of the day on a 16-thread box; more runners shrink
+# wall-time per push, idle cost is near zero.
+: "${GITHUB_RUNNER_INSTANCES:=12}"
 
 ok "env file validated"
 

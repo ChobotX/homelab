@@ -189,7 +189,7 @@ jobs:
   # detect-changes.sh. Infra jobs run in parallel after deploy-common (ufw
   # serialises behind wireguard — rules reference the WG iface). App jobs
   # run in parallel on separate self-hosted runner instances
-  # (`GITHUB_RUNNER_INSTANCES=4` in bootstrap.sh). Precondition fixes:
+  # (`GITHUB_RUNNER_INSTANCES=12` in bootstrap.sh). Precondition fixes:
   #   - apache2-utils is in common_packages (was inline apt in traefik role)
   #   - `proxy` + `observability` networks are created at end of docker role
   # Handler scope was already role-local; no cross-role `notify:` edges.
