@@ -36,7 +36,7 @@ out() {
   printf '  %-18s %s\n' "$1" "$2" >&2
 }
 
-BUCKETS=(shared common qos wireguard ufw ssh fail2ban storage docker nvidia_container observability traefik vaultwarden jellyfin syncthing n8n ollama homepage backup)
+BUCKETS=(shared common qos wireguard ufw ssh fail2ban storage docker nvidia_container observability traefik vaultwarden jellyfin syncthing gluetun qbittorrent prowlarr sonarr radarr bazarr n8n ollama homepage backup)
 
 force_full() {
   local reason="$1"
@@ -86,6 +86,12 @@ traefik=false
 vw=false
 jellyfin=false
 syncthing=false
+gluetun=false
+qbittorrent=false
+prowlarr=false
+sonarr=false
+radarr=false
+bazarr=false
 n8n=false
 ollama=false
 hp=false
@@ -112,6 +118,12 @@ while IFS= read -r f; do
     ansible/roles/vaultwarden/*)   vw=true ;;
     ansible/roles/jellyfin/*)      jellyfin=true ;;
     ansible/roles/syncthing/*)     syncthing=true ;;
+    ansible/roles/gluetun/*)       gluetun=true ;;
+    ansible/roles/qbittorrent/*)   qbittorrent=true ;;
+    ansible/roles/prowlarr/*)      prowlarr=true ;;
+    ansible/roles/sonarr/*)        sonarr=true ;;
+    ansible/roles/radarr/*)        radarr=true ;;
+    ansible/roles/bazarr/*)        bazarr=true ;;
     ansible/roles/n8n/*)           n8n=true ;;
     ansible/roles/ollama/*)        ollama=true ;;
     ansible/roles/homepage/*)      hp=true ;;
@@ -131,6 +143,7 @@ if [ "$shared" = true ]; then
   common=true; qos=true; wg=true; ufw=true; ssh=true; f2b=true; storage=true; docker=true
   nvidia_container=true
   obs=true; traefik=true; vw=true; jellyfin=true; syncthing=true; n8n=true; ollama=true; hp=true; backup=true
+  gluetun=true; qbittorrent=true; prowlarr=true; sonarr=true; radarr=true; bazarr=true
 fi
 
 echo "detect-changes: $(echo "$files" | wc -l | tr -d ' ') files changed in $BASE..$HEAD" >&2
@@ -149,6 +162,12 @@ out traefik "$traefik"
 out vaultwarden "$vw"
 out jellyfin "$jellyfin"
 out syncthing "$syncthing"
+out gluetun "$gluetun"
+out qbittorrent "$qbittorrent"
+out prowlarr "$prowlarr"
+out sonarr "$sonarr"
+out radarr "$radarr"
+out bazarr "$bazarr"
 out n8n "$n8n"
 out ollama "$ollama"
 out homepage "$hp"

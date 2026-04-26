@@ -226,6 +226,12 @@ jobs:
       vaultwarden: ${{ steps.detect.outputs.vaultwarden }}
       jellyfin: ${{ steps.detect.outputs.jellyfin }}
       syncthing: ${{ steps.detect.outputs.syncthing }}
+      gluetun: ${{ steps.detect.outputs.gluetun }}
+      qbittorrent: ${{ steps.detect.outputs.qbittorrent }}
+      prowlarr: ${{ steps.detect.outputs.prowlarr }}
+      sonarr: ${{ steps.detect.outputs.sonarr }}
+      radarr: ${{ steps.detect.outputs.radarr }}
+      bazarr: ${{ steps.detect.outputs.bazarr }}
       n8n: ${{ steps.detect.outputs.n8n }}
       ollama: ${{ steps.detect.outputs.ollama }}
       homepage: ${{ steps.detect.outputs.homepage }}
@@ -506,6 +512,122 @@ jobs:
         with:
           tags: syncthing
 
+  deploy-gluetun:
+    # Mullvad WireGuard sidecar. Must converge before qbittorrent + prowlarr
+    # (their containers share its netns). Traefik labels for the qBit + Prowlarr
+    # WebUIs sit on this container so it also waits on traefik.
+    name: deploy (gluetun)
+    needs: [deploy-docker, deploy-ufw, deploy-traefik, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.gluetun == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: gluetun
+
+  deploy-qbittorrent:
+    # Inside gluetun's netns. Must wait for gluetun healthy before recreating;
+    # depends_on: service_healthy in compose enforces it at container level too.
+    name: deploy (qbittorrent)
+    needs: [deploy-gluetun, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.qbittorrent == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: qbittorrent
+
+  deploy-prowlarr:
+    # Inside gluetun's netns alongside qBittorrent.
+    name: deploy (prowlarr)
+    needs: [deploy-gluetun, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.prowlarr == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: prowlarr
+
+  deploy-sonarr:
+    # Direct on `arr` docker network. Talks to Prowlarr/qBit through gluetun
+    # but doesn't need the tunnel itself, so it only depends on traefik.
+    name: deploy (sonarr)
+    needs: [deploy-docker, deploy-ufw, deploy-traefik, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.sonarr == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: sonarr
+
+  deploy-radarr:
+    name: deploy (radarr)
+    needs: [deploy-docker, deploy-ufw, deploy-traefik, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.radarr == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: radarr
+
+  deploy-bazarr:
+    name: deploy (bazarr)
+    needs: [deploy-docker, deploy-ufw, deploy-traefik, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.bazarr == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: bazarr
+
   deploy-n8n:
     name: deploy (n8n)
     needs: [deploy-docker, deploy-ufw, changes]
@@ -573,7 +695,7 @@ jobs:
     # backup proceed even when some apps were skipped by the change gate —
     # `needs:` default would cascade-skip it otherwise. Gated on
     # changes.backup; weekly schedule force-fulls to heal drift.
-    needs: [deploy-qos, deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-syncthing, deploy-n8n, deploy-ollama, deploy-nvidia-container, deploy-homepage, changes]
+    needs: [deploy-qos, deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-syncthing, deploy-gluetun, deploy-qbittorrent, deploy-prowlarr, deploy-sonarr, deploy-radarr, deploy-bazarr, deploy-n8n, deploy-ollama, deploy-nvidia-container, deploy-homepage, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
