@@ -146,6 +146,15 @@ if [ "$shared" = true ]; then
   gluetun=true; qbittorrent=true; prowlarr=true; sonarr=true; radarr=true; bazarr=true
 fi
 
+# gluetun owns the netns for qbittorrent + prowlarr — a gluetun change forces
+# both sidecars to recreate so they re-attach cleanly to the (potentially new)
+# netns. Without this cascade, a gluetun-only commit would leave qBit/Prowlarr
+# pointing at a stale netns reference if Docker rebuilt it.
+if [ "$gluetun" = true ]; then
+  qbittorrent=true
+  prowlarr=true
+fi
+
 echo "detect-changes: $(echo "$files" | wc -l | tr -d ' ') files changed in $BASE..$HEAD" >&2
 out shared "$shared"
 out common "$common"
