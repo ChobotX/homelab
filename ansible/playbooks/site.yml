@@ -19,7 +19,9 @@
 #   syncthing      → remote media ingest (sync protocol bound to WG IP)
 #   qbittorrent    → config dirs + role-default vars (container in gluetun stack)
 #   prowlarr       → config dir + role-default vars (container in gluetun stack)
-#   gluetun        → Mullvad WG + brings up the qbit/prowlarr/gluetun trio
+#   flaresolverr   → role-default vars only (container in gluetun stack — CF
+#                    challenges exit via Mullvad, reached at localhost:8191)
+#   gluetun        → Mullvad WG + brings up the gluetun/qbit/prowlarr/flaresolverr stack
 #   sonarr         → TV library manager (direct, arr docker network)
 #   radarr         → movie library manager (direct, arr docker network)
 #   bazarr         → subtitle manager (direct, arr docker network)
@@ -158,6 +160,8 @@
       tags: [qbittorrent, media, services]
     - role: prowlarr
       tags: [prowlarr, media, services]
+    - role: flaresolverr
+      tags: [flaresolverr, media, services]
     - role: gluetun
       tags: [gluetun, vpn, media, services]
     - role: sonarr

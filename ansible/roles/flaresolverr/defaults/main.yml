@@ -1,0 +1,16 @@
+---
+# FlareSolverr — headless-Chromium proxy that solves Cloudflare's JS/captcha
+# challenges so Prowlarr can index trackers fronted by Cloudflare (EZTV,
+# 1337x mirrors, etc.). Prowlarr targets it via Indexer Proxies → FlareSolverr.
+#
+# Image: https://github.com/FlareSolverr/FlareSolverr
+flaresolverr_image: "flaresolverr/flaresolverr:v3.4.6@sha256:7962759d99d7e125e108e0f5e7f3cdbcd36161776d058d1d9b7153b92ef1af9e"
+
+# FlareSolverr runs INSIDE gluetun's netns (network_mode: service:gluetun
+# in the gluetun role's compose) so Cloudflare-challenge traffic exits via
+# Mullvad — Cloudflare sees the Mullvad IP, not the homelab's. Prowlarr,
+# being in the same netns, reaches it as http://localhost:8191.
+flaresolverr_port: 8191
+
+# Logging: INFO is default; DEBUG for diagnosing flaky challenges.
+flaresolverr_log_level: info

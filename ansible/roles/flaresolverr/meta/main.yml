@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  role_name: flaresolverr
+  author: homelab-admin
+  description: FlareSolverr Cloudflare-challenge proxy for Prowlarr indexers
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]

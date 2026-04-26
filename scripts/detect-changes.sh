@@ -36,7 +36,7 @@ out() {
   printf '  %-18s %s\n' "$1" "$2" >&2
 }
 
-BUCKETS=(shared common qos wireguard ufw ssh fail2ban storage docker nvidia_container observability traefik vaultwarden jellyfin syncthing gluetun qbittorrent prowlarr sonarr radarr bazarr n8n ollama homepage backup)
+BUCKETS=(shared common qos wireguard ufw ssh fail2ban storage docker nvidia_container observability traefik vaultwarden jellyfin syncthing gluetun qbittorrent prowlarr flaresolverr sonarr radarr bazarr n8n ollama homepage backup)
 
 force_full() {
   local reason="$1"
@@ -89,6 +89,7 @@ syncthing=false
 gluetun=false
 qbittorrent=false
 prowlarr=false
+flaresolverr=false
 sonarr=false
 radarr=false
 bazarr=false
@@ -121,6 +122,7 @@ while IFS= read -r f; do
     ansible/roles/gluetun/*)       gluetun=true ;;
     ansible/roles/qbittorrent/*)   qbittorrent=true ;;
     ansible/roles/prowlarr/*)      prowlarr=true ;;
+    ansible/roles/flaresolverr/*)  flaresolverr=true ;;
     ansible/roles/sonarr/*)        sonarr=true ;;
     ansible/roles/radarr/*)        radarr=true ;;
     ansible/roles/bazarr/*)        bazarr=true ;;
@@ -143,7 +145,7 @@ if [ "$shared" = true ]; then
   common=true; qos=true; wg=true; ufw=true; ssh=true; f2b=true; storage=true; docker=true
   nvidia_container=true
   obs=true; traefik=true; vw=true; jellyfin=true; syncthing=true; n8n=true; ollama=true; hp=true; backup=true
-  gluetun=true; qbittorrent=true; prowlarr=true; sonarr=true; radarr=true; bazarr=true
+  gluetun=true; qbittorrent=true; prowlarr=true; flaresolverr=true; sonarr=true; radarr=true; bazarr=true
 fi
 
 # Vpn-stack cascade — gluetun + qbittorrent + prowlarr live in ONE compose
@@ -154,12 +156,13 @@ fi
 #      → handler swaps the trio with the new image/var.
 #   2. gluetun changed → qbit/prowlarr roles reconverge their data dirs
 #      before the compose recreate touches them.
-if [ "$qbittorrent" = true ] || [ "$prowlarr" = true ]; then
+if [ "$qbittorrent" = true ] || [ "$prowlarr" = true ] || [ "$flaresolverr" = true ]; then
   gluetun=true
 fi
 if [ "$gluetun" = true ]; then
   qbittorrent=true
   prowlarr=true
+  flaresolverr=true
 fi
 
 echo "detect-changes: $(echo "$files" | wc -l | tr -d ' ') files changed in $BASE..$HEAD" >&2
@@ -181,6 +184,7 @@ out syncthing "$syncthing"
 out gluetun "$gluetun"
 out qbittorrent "$qbittorrent"
 out prowlarr "$prowlarr"
+out flaresolverr "$flaresolverr"
 out sonarr "$sonarr"
 out radarr "$radarr"
 out bazarr "$bazarr"

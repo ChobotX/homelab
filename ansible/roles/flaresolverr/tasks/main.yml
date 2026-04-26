@@ -1,0 +1,10 @@
+---
+# FlareSolverr — defaults-only role. The container itself runs in gluetun's
+# compose project (single-project required for service:gluetun). This file
+# exists so the role can carry tags + run a no-op converge for `--tags
+# flaresolverr` deploys, but holds no host-side tasks. All container config
+# lives in the gluetun role.
+- name: FlareSolverr role no-op (config consumed by gluetun role)
+  ansible.builtin.debug:
+    msg: "FlareSolverr container provisioned by gluetun role's compose project"
+  changed_when: false

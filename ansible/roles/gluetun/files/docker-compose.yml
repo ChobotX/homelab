@@ -125,6 +125,28 @@ services:
     volumes:
       - /opt/prowlarr/config:/config
 
+  flaresolverr:
+    # Headless-Chromium proxy that solves Cloudflare challenges for Prowlarr.
+    # Runs INSIDE gluetun's netns so the browser exits via Mullvad — without
+    # this, Cloudflare sees the homelab's real public IP whenever Prowlarr
+    # asks FlareSolverr to fetch a CF-protected tracker.
+    #
+    # Reached by Prowlarr at http://localhost:8191 (same netns).
+    image: ${FLARESOLVERR_IMAGE}
+    container_name: flaresolverr
+    restart: unless-stopped
+    stop_grace_period: 15s
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      LOG_LEVEL: "${FLARESOLVERR_LOG_LEVEL}"
+      PORT: "${FLARESOLVERR_PORT}"
+      TZ: "${TZ}"
+
 networks:
   arr:
     external: true

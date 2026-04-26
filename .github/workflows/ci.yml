@@ -229,6 +229,7 @@ jobs:
       gluetun: ${{ steps.detect.outputs.gluetun }}
       qbittorrent: ${{ steps.detect.outputs.qbittorrent }}
       prowlarr: ${{ steps.detect.outputs.prowlarr }}
+      flaresolverr: ${{ steps.detect.outputs.flaresolverr }}
       sonarr: ${{ steps.detect.outputs.sonarr }}
       radarr: ${{ steps.detect.outputs.radarr }}
       bazarr: ${{ steps.detect.outputs.bazarr }}
@@ -519,7 +520,7 @@ jobs:
     # subdirs exist before compose binds them. Also waits on traefik
     # since gluetun's container labels need traefik running to take effect.
     name: deploy (gluetun)
-    needs: [deploy-docker, deploy-ufw, deploy-traefik, deploy-qbittorrent, deploy-prowlarr, changes]
+    needs: [deploy-docker, deploy-ufw, deploy-traefik, deploy-qbittorrent, deploy-prowlarr, deploy-flaresolverr, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -575,6 +576,29 @@ jobs:
       - uses: ./.github/actions/deploy-tags
         with:
           tags: prowlarr
+
+  deploy-flaresolverr:
+    # No host-side tasks (defaults-only role). Container provisioned by the
+    # gluetun compose project. This job exists so detect-changes can route
+    # flaresolverr-bucket changes (image bump, port change) into the deploy
+    # DAG; the cascade in detect-changes also flips gluetun=true so the
+    # compose project actually recreates.
+    name: deploy (flaresolverr)
+    needs: [deploy-docker, deploy-ufw, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.flaresolverr == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: flaresolverr
 
   deploy-sonarr:
     # Direct on `arr` docker network. Talks to Prowlarr/qBit through gluetun
@@ -699,7 +723,7 @@ jobs:
     # backup proceed even when some apps were skipped by the change gate —
     # `needs:` default would cascade-skip it otherwise. Gated on
     # changes.backup; weekly schedule force-fulls to heal drift.
-    needs: [deploy-qos, deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-syncthing, deploy-gluetun, deploy-qbittorrent, deploy-prowlarr, deploy-sonarr, deploy-radarr, deploy-bazarr, deploy-n8n, deploy-ollama, deploy-nvidia-container, deploy-homepage, changes]
+    needs: [deploy-qos, deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-syncthing, deploy-gluetun, deploy-qbittorrent, deploy-prowlarr, deploy-flaresolverr, deploy-sonarr, deploy-radarr, deploy-bazarr, deploy-n8n, deploy-ollama, deploy-nvidia-container, deploy-homepage, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
