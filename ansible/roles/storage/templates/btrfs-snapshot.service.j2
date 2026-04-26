@@ -1,0 +1,17 @@
+[Unit]
+Description=Daily btrfs read-only snapshot of /mnt/elements
+# Don't even try when the disk is missing — fstab uses nofail, so a
+# detached drive leaves /mnt/elements as an empty SSD-backed dir, and
+# snapshotting that would corrupt the SSD root.
+ConditionPathIsMountPoint=/mnt/elements
+
+[Service]
+Type=oneshot
+Environment=RETENTION_DAYS={{ storage_btrfs_snapshot_retention_days }}
+ExecStart=/usr/local/sbin/btrfs-snapshot.sh
+# Hands-off privileges — script needs root for btrfs ioctls + subvolume
+# create/delete, but no other capabilities. ProtectSystem=strict-ish
+# would block the snapshot writes; leave it minimal.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

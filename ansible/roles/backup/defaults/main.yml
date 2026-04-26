@@ -20,6 +20,13 @@ backup_paths:
   - /opt/bazarr/config
   - /etc/wireguard
   - /etc/ssh
+  # Host-truth + secrets dir — Mullvad WG key, GitHub PAT, Cloudflare token,
+  # all generated internal passwords (vaultwarden_admin_token, restic_password,
+  # grafana_admin_password, traefik_dashboard_password, …) live here. Without
+  # this in the backup, a host-loss event means re-issuing every account
+  # credential by hand. /etc/homelab/config.yml (host-truth, non-secret) also
+  # lives here so a clean rebuild can re-read its inventory facts.
+  - /etc/homelab
   - "/home/{{ admin_user }}"
 
 # Paths excluded (globs).

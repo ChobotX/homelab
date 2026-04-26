@@ -95,6 +95,56 @@
     label: "{{ item.src }}"
     extended: true
 
+# ── Btrfs daily snapshot timer ─────────────────────────────────────────────
+# Daily read-only snapshot of /mnt/elements into .snapshots/ subvol. Cheap
+# CoW; gives < 1s rollback for accidental file deletes. Restic still owns
+# off-site recovery; this is the fast-local layer.
+
+- name: Deploy btrfs-snapshot script
+  ansible.builtin.copy:
+    src: btrfs-snapshot.sh
+    dest: /usr/local/sbin/btrfs-snapshot.sh
+    owner: root
+    group: root
+    mode: "0750"
+  when: storage_btrfs_snapshot_enabled
+
+- name: Deploy btrfs-snapshot systemd service
+  ansible.builtin.template:
+    src: btrfs-snapshot.service.j2
+    dest: /etc/systemd/system/btrfs-snapshot.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: storage_btrfs_snapshot_enabled
+  notify: Reload systemd for btrfs-snapshot
+
+- name: Deploy btrfs-snapshot systemd timer
+  ansible.builtin.template:
+    src: btrfs-snapshot.timer.j2
+    dest: /etc/systemd/system/btrfs-snapshot.timer
+    owner: root
+    group: root
+    mode: "0644"
+  when: storage_btrfs_snapshot_enabled
+  notify: Reload systemd for btrfs-snapshot
+
+- name: Enable btrfs-snapshot timer
+  ansible.builtin.systemd:
+    name: btrfs-snapshot.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: storage_btrfs_snapshot_enabled
+
+- name: Disable btrfs-snapshot timer when toggled off
+  ansible.builtin.systemd:
+    name: btrfs-snapshot.timer
+    state: stopped
+    enabled: false
+  when: not storage_btrfs_snapshot_enabled
+  failed_when: false
+
 - name: Ensure bind mounts are active (fstab + live)
   # x-systemd.requires-mounts-for ties the bind's lifetime to /mnt/elements —
   # if the btrfs disk is absent, the bind refuses to activate (fails loudly)

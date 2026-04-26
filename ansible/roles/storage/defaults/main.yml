@@ -10,6 +10,16 @@ storage_mount_fstype: btrfs
 # usable even if the disk is physically detached.
 storage_mount_opts: "defaults,noatime,compress=zstd:3,nofail,x-systemd.device-timeout=15"
 
+# Daily read-only btrfs snapshot timer for /mnt/elements. CoW makes each
+# snapshot near-free until churn happens; storage cost grows with delta,
+# not snapshot count. Snapshots live in a sibling subvolume
+# /mnt/elements/.snapshots so they don't recursively include themselves.
+# 7-day retention is plenty for "oops I deleted the wrong thing" rollback;
+# longer-term recovery is restic's job.
+storage_btrfs_snapshot_enabled: true
+storage_btrfs_snapshot_oncalendar: "*-*-* 02:00:00"
+storage_btrfs_snapshot_retention_days: 7
+
 # Each entry becomes a bind mount: /mnt/elements/<dst> → <src>.
 # The src path is created as an empty mount point (so it exists even on a
 # fresh host before the consumer role runs). The dst path under
