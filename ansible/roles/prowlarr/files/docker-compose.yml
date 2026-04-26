@@ -10,10 +10,10 @@ services:
     container_name: prowlarr
     restart: unless-stopped
     stop_grace_period: 30s
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
+    # `container:gluetun` (NOT `service:gluetun`) — cross-project ref. See
+    # qbittorrent role's compose for the full reasoning. depends_on dropped
+    # for the same reason; container start fails until gluetun exists.
+    network_mode: "container:gluetun"
     security_opt:
       - no-new-privileges:true
     env_file:

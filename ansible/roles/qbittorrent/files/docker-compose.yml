@@ -13,15 +13,18 @@ services:
     restart: unless-stopped
     # Preference DB + resume data need a moment to flush before SIGKILL.
     stop_grace_period: 30s
-    # Share gluetun's netns. If gluetun stops or the tunnel drops, qBit has
-    # no path to the internet — killswitch by construction, not by config.
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        # Start only after gluetun's healthcheck passes (tunnel up,
-        # 1.1.1.1:443 reachable via WG). No chance of qBit talking to a
-        # tracker before the tunnel is live.
-        condition: service_healthy
+    # Share gluetun's netns. `container:gluetun` (NOT `service:gluetun`) —
+    # gluetun runs in a separate compose project (/opt/gluetun) so the
+    # service-scoped form fails with "depends on undefined service". The
+    # container-scoped form references by Docker container name and works
+    # across projects. Killswitch contract is identical: gluetun gone =
+    # netns gone = qBit hangs.
+    #
+    # No `depends_on:` — cross-project depends_on is not supported by
+    # compose. Start order enforced at the Docker level instead: starting a
+    # container with `network_mode: container:X` fails if X doesn't exist,
+    # so qBit's `restart: unless-stopped` loops until gluetun is up.
+    network_mode: "container:gluetun"
     security_opt:
       - no-new-privileges:true
     env_file:
