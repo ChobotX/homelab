@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  LanguageTags plugin configuration. Templated by Ansible — manual edits in
+  Jellyfin Dashboard → Plugins → Language Tags will be overwritten on next
+  deploy. Plugin writes raw 3-letter ISO codes as tags (e.g. `ces`, `eng`),
+  no `language_` prefix on this version (added in 0.5.x).
+-->
+<PluginConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                     xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <AlwaysForceFullRefresh>false</AlwaysForceFullRefresh>
+  <WhitelistLanguageTags />
+  <!-- Default upstream is false; we need both audio and subtitle tags so
+       items with only Czech subs (and no Czech dub) still get tagged. -->
+  <AddSubtitleTags>true</AddSubtitleTags>
+  <SynchronousRefresh>false</SynchronousRefresh>
+  <DisableUndefinedLanguageTags>false</DisableUndefinedLanguageTags>
+</PluginConfiguration>

@@ -61,6 +61,26 @@
     remote_src: true
   notify: Swap jellyfin service
 
+- name: Ensure plugin configurations dir exists
+  ansible.builtin.file:
+    path: "{{ jellyfin_plugins_dir }}/configurations"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Template LanguageTags plugin configuration
+  # Plugin loads this XML on every startup; flipping AddSubtitleTags here
+  # is enough — no API call, no UI click. Manual UI edits in Dashboard →
+  # Plugins → Language Tags will lose on next ansible run, by design.
+  ansible.builtin.template:
+    src: Jellyfin.Plugin.LanguageTags.xml.j2
+    dest: "{{ jellyfin_plugins_dir }}/configurations/Jellyfin.Plugin.LanguageTags.xml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap jellyfin service
+
 - name: Re-assert root ownership recursively (heals prior bad-owner extracts)
   # unarchive is checksum-based and won't re-extract once content matches —
   # so a previous run that wrote files with the wrong owner stays wrong on
