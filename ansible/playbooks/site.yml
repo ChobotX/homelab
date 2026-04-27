@@ -16,6 +16,7 @@
 #   traefik        → reverse proxy, bound to wg0 IP, Cloudflare DNS-01, OTLP → tempo
 #   vaultwarden    → secret vault behind Traefik
 #   jellyfin       → media server behind Traefik (HW transcode if /dev/dri present)
+#   jellyfin_plugins → community plugins (DLL drop into jellyfin config/plugins)
 #   syncthing      → remote media ingest (sync protocol bound to WG IP)
 #   qbittorrent    → config dirs + role-default vars (container in gluetun stack)
 #   prowlarr       → config dir + role-default vars (container in gluetun stack)
@@ -149,6 +150,8 @@
       tags: [vaultwarden, services]
     - role: jellyfin
       tags: [jellyfin, media, services]
+    - role: jellyfin_plugins
+      tags: [jellyfin_plugins, jellyfin, media, services]
     - role: syncthing
       tags: [syncthing, media, services]
     # Arr stack — keep these together and AFTER traefik/jellyfin/syncthing.

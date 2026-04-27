@@ -1,0 +1,19 @@
+---
+# Jellyfin community plugins installed declaratively (DLL drop into
+# /opt/jellyfin/config/plugins/<Name>_<ver>/). Avoids the UI-catalogue
+# install path so the plugin set is reproducible across rebuilds.
+#
+# Pinned per-plugin: each pin is the highest release whose meta.json
+# `targetAbi` is compatible with the running jellyfin_image. When jellyfin
+# is bumped to 10.11.x, the languageTags pin can move to its 0.5.x line.
+
+# TheXaman/jellyfin-plugin-languageTags — auto-tags items with audio +
+# subtitle language facts (e.g. `language_Czech`, `subtitle_language_Czech`)
+# so Jellyfin's native Tag filter and Parental Controls "Allow items with
+# tags" can hide media without a desired language. Source:
+# https://github.com/TheXaman/jellyfin-plugin-languageTags
+# v0.1.8.0 is the last release built for Jellyfin 10.10.x ABI.
+jellyfin_plugins_languagetags_version: "0.1.8.0"
+jellyfin_plugins_languagetags_sha256: "cef32de8136f700af55df56a213d7ddfb8c9c048f6310545df792699c8d354ea"
+
+jellyfin_plugins_dir: /opt/jellyfin/config/plugins

@@ -1,0 +1,15 @@
+---
+# No `dependencies:` here — listing jellyfin would re-execute its tasks
+# every time this role runs. Cross-role notify works fine within a single
+# play, so the only requirement is site.yml ordering: jellyfin_plugins must
+# come AFTER jellyfin so the `Swap jellyfin service` handler is registered
+# and the /opt/jellyfin/config dir already exists.
+galaxy_info:
+  role_name: jellyfin_plugins
+  author: homelab-admin
+  description: Jellyfin community plugins (declarative DLL drop into config/plugins)
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]

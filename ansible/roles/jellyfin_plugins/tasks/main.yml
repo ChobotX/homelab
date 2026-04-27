@@ -1,0 +1,81 @@
+---
+# Plugin install posture: download the release zip from GitHub (sha256-pinned),
+# unpack into /opt/jellyfin/config/plugins/<Name>_<ver>/. Jellyfin discovers
+# any subdir containing a meta.json on startup — no API call, no manual UI
+# install. Same idempotency guarantee as the get_url+unarchive pattern in
+# the observability role: get_url short-circuits on checksum match, unarchive
+# short-circuits on extracted-content match.
+
+- name: Ensure unzip is installed (required by ansible.builtin.unarchive for .zip)
+  ansible.builtin.apt:
+    name: unzip
+    state: present
+    update_cache: false
+
+- name: Ensure plugin root dir exists
+  # Jellyfin runtime user inside the official jellyfin/jellyfin image is uid
+  # 1000 — owns this so the server can self-update plugins from the UI later
+  # without permission churn. Matches what the UI-catalogue install would do.
+  ansible.builtin.file:
+    path: "{{ jellyfin_plugins_dir }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0755"
+
+# ── LanguageTags ─────────────────────────────────────────────────────────
+# Adds tags like `language_Czech` (audio) and `subtitle_language_Czech`
+# (internal + .srt/.ass sidecars). Once tagged, filter via library Filter
+# chip → Tags, or pin per-user with Parental Controls → Allow items with tags.
+
+- name: Download LanguageTags plugin zip
+  vars:
+    _v: "{{ jellyfin_plugins_languagetags_version }}"
+    _base: "https://github.com/TheXaman/jellyfin-plugin-languageTags/releases/download"
+  ansible.builtin.get_url:
+    url: "{{ _base }}/v{{ _v }}/language-tags_{{ _v }}.zip"
+    dest: "/tmp/jellyfin-plugin-languagetags-{{ _v }}.zip"
+    checksum: "sha256:{{ jellyfin_plugins_languagetags_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Ensure LanguageTags plugin dir
+  ansible.builtin.file:
+    path: "{{ jellyfin_plugins_dir }}/LanguageTags_{{ jellyfin_plugins_languagetags_version }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0755"
+
+- name: Extract LanguageTags plugin DLL
+  ansible.builtin.unarchive:
+    src: "/tmp/jellyfin-plugin-languagetags-{{ jellyfin_plugins_languagetags_version }}.zip"
+    dest: "{{ jellyfin_plugins_dir }}/LanguageTags_{{ jellyfin_plugins_languagetags_version }}"
+    owner: "1000"
+    group: "1000"
+    mode: "0644"
+    remote_src: true
+  notify: Swap jellyfin service
+
+- name: Find stale LanguageTags plugin versions
+  # Jellyfin loads every plugin dir matching *_<ver>/. Without pruning,
+  # bumping the version would leave the old DLL alongside the new one and
+  # both would register the same plugin GUID — Jellyfin then picks one
+  # arbitrarily and logs a warning. Keep exactly the pinned version.
+  ansible.builtin.find:
+    paths: "{{ jellyfin_plugins_dir }}"
+    patterns: "LanguageTags_*"
+    file_type: directory
+    excludes: "LanguageTags_{{ jellyfin_plugins_languagetags_version }}"
+  register: jellyfin_plugins_languagetags_stale
+
+- name: Remove stale LanguageTags plugin versions
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ jellyfin_plugins_languagetags_stale.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: jellyfin_plugins_languagetags_stale.files | length > 0
+  notify: Swap jellyfin service

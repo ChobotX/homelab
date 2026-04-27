@@ -48,6 +48,19 @@
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
+    },
+    {
+      "description": "Jellyfin LanguageTags plugin — version pinned in jellyfin_plugins defaults; sha256 sits on the next line and must be hand-bumped from the release asset (renovate cannot derive github-release artefact hashes).",
+      "customType": "regex",
+      "fileMatch": [
+        "^ansible/roles/jellyfin_plugins/defaults/.+\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "jellyfin_plugins_languagetags_version:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?"
+      ],
+      "depNameTemplate": "TheXaman/jellyfin-plugin-languageTags",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v?(?<version>.+)$"
     }
   ]
 }
