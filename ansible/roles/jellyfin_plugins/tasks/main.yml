@@ -13,14 +13,17 @@
     update_cache: false
 
 - name: Ensure plugin root dir exists
-  # Jellyfin runtime user inside the official jellyfin/jellyfin image is uid
-  # 1000 — owns this so the server can self-update plugins from the UI later
-  # without permission churn. Matches what the UI-catalogue install would do.
+  # Owner=root because the official jellyfin/jellyfin container runs as uid 0
+  # AND has cap_drop: ALL — without CAP_DAC_OVERRIDE, root inside the container
+  # can only write to files it actually owns. PluginManager rewrites meta.json
+  # on first load (to add `Active` status); a 1000-owned file would fail with
+  # EACCES and abort startup. Mirrors /opt/jellyfin/config/{config,data,log}/
+  # ownership which Jellyfin writes to without issue.
   ansible.builtin.file:
     path: "{{ jellyfin_plugins_dir }}"
     state: directory
-    owner: "1000"
-    group: "1000"
+    owner: root
+    group: root
     mode: "0755"
 
 # ── LanguageTags ─────────────────────────────────────────────────────────
@@ -44,16 +47,16 @@
   ansible.builtin.file:
     path: "{{ jellyfin_plugins_dir }}/LanguageTags_{{ jellyfin_plugins_languagetags_version }}"
     state: directory
-    owner: "1000"
-    group: "1000"
+    owner: root
+    group: root
     mode: "0755"
 
 - name: Extract LanguageTags plugin DLL
   ansible.builtin.unarchive:
     src: "/tmp/jellyfin-plugin-languagetags-{{ jellyfin_plugins_languagetags_version }}.zip"
     dest: "{{ jellyfin_plugins_dir }}/LanguageTags_{{ jellyfin_plugins_languagetags_version }}"
-    owner: "1000"
-    group: "1000"
+    owner: root
+    group: root
     mode: "0644"
     remote_src: true
   notify: Swap jellyfin service
