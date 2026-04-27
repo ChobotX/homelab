@@ -162,26 +162,27 @@
 
 # ── Self-heal /opt/media ownership ─────────────────────────────────────────
 # Manual rsync/scp drops by root leave files as root:root (sometimes 0700)
-# which makes Sonarr/Radarr/Bazarr (uid 1000) blind to the library. Repair
-# in two phases: detect drift (cheap walk, no writes), then repair only when
-# drift exists so the play stays idempotent and quiet on a clean tree.
+# which makes Sonarr/Radarr/Bazarr blind to the library (their PUID/PGID
+# matches admin_user's uid). Repair in two phases: detect drift (cheap walk,
+# no writes), then repair only when drift exists so the play stays
+# idempotent and quiet on a clean tree.
 - name: Detect ownership drift under /opt/media
   ansible.builtin.shell: |
     set -o pipefail
-    find /opt/media \( ! -user {{ storage_media_owner }} -o ! -group {{ storage_media_group }} \) -print -quit
+    find /opt/media \( ! -user {{ admin_user }} -o ! -group {{ admin_user }} \) -print -quit
   register: storage_media_drift
   changed_when: false
   check_mode: false
   failed_when: false
 
-- name: Repair /opt/media ownership + perms (chobotx:chobotx, u=rwX,go=rX)
+- name: Repair /opt/media ownership + perms (u=rwX,go=rX) for {{ admin_user }}
   # u=rwX,go=rX → +x on dirs and already-executable files only; .mp4/.srt
   # don't gain executable bit. Recursive chown+chmod on a multi-TB tree is
   # slow but only fires when the detector above flagged drift, so steady
   # state is no-op.
   ansible.builtin.shell: |
     set -e
-    chown -R {{ storage_media_owner }}:{{ storage_media_group }} /opt/media
+    chown -R {{ admin_user }}:{{ admin_user }} /opt/media
     chmod -R u=rwX,go=rX /opt/media
   when: storage_media_drift.stdout | length > 0
   changed_when: true
