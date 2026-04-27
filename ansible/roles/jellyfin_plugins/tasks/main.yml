@@ -61,6 +61,18 @@
     remote_src: true
   notify: Swap jellyfin service
 
+- name: Re-assert root ownership recursively (heals prior bad-owner extracts)
+  # unarchive is checksum-based and won't re-extract once content matches —
+  # so a previous run that wrote files with the wrong owner stays wrong on
+  # subsequent runs. Explicit recursive chown converges existing state.
+  ansible.builtin.file:
+    path: "{{ jellyfin_plugins_dir }}/LanguageTags_{{ jellyfin_plugins_languagetags_version }}"
+    state: directory
+    owner: root
+    group: root
+    recurse: true
+  notify: Swap jellyfin service
+
 - name: Find stale LanguageTags plugin versions
   # Jellyfin loads every plugin dir matching *_<ver>/. Without pruning,
   # bumping the version would leave the old DLL alongside the new one and

@@ -118,6 +118,11 @@ while IFS= read -r f; do
     ansible/roles/traefik/*)       traefik=true ;;
     ansible/roles/vaultwarden/*)   vw=true ;;
     ansible/roles/jellyfin/*)      jellyfin=true ;;
+    # jellyfin_plugins is a sidecar to jellyfin: must run AFTER it, notifies
+    # the same `Swap jellyfin service` handler, and rides the same --tags
+    # jellyfin invocation (its role tags include `jellyfin`). Folded into the
+    # jellyfin bucket so a plugin-only change still re-deploys jellyfin.
+    ansible/roles/jellyfin_plugins/*) jellyfin=true ;;
     ansible/roles/syncthing/*)     syncthing=true ;;
     ansible/roles/gluetun/*)       gluetun=true ;;
     ansible/roles/qbittorrent/*)   qbittorrent=true ;;
