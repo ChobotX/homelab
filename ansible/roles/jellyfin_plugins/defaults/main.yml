@@ -12,8 +12,8 @@
 # so Jellyfin's native Tag filter and Parental Controls "Allow items with
 # tags" can hide media without a desired language. Source:
 # https://github.com/TheXaman/jellyfin-plugin-languageTags
-# v0.1.8.0 is the last release built for Jellyfin 10.10.x ABI.
-jellyfin_plugins_languagetags_version: "0.1.8.0"
-jellyfin_plugins_languagetags_sha256: "cef32de8136f700af55df56a213d7ddfb8c9c048f6310545df792699c8d354ea"
+# v0.5.3.0 requires Jellyfin 10.11+ ABI.
+jellyfin_plugins_languagetags_version: "0.5.3.0"
+jellyfin_plugins_languagetags_sha256: "14eda04930c33042d255252ce1750df31d47e2c66c424915e0699b4dd119aa00"
 
 jellyfin_plugins_dir: /opt/jellyfin/config/plugins
