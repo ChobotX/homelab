@@ -167,22 +167,28 @@
 # no writes), then repair only when drift exists so the play stays
 # idempotent and quiet on a clean tree.
 - name: Detect ownership drift under /opt/media
-  ansible.builtin.shell: |
-    set -o pipefail
-    find /opt/media \( ! -user {{ admin_user }} -o ! -group {{ admin_user }} \) -print -quit
+  # NOTE: prior version used `ansible.builtin.shell` with `set -o pipefail`,
+  # which fails silently under dash (default /bin/sh on Ubuntu) — the detector
+  # registered empty stdout and the repair below was always skipped. Use
+  # `command` (no shell needed: no pipe, no glob) to sidestep the trap.
+  ansible.builtin.command: >-
+    find /opt/media
+    ( ! -user {{ admin_user }} -o ! -group {{ admin_user }} )
+    -print -quit
   register: storage_media_drift
   changed_when: false
   check_mode: false
-  failed_when: false
 
-- name: Repair /opt/media ownership + perms (u=rwX,go=rX) for {{ admin_user }}
+- name: Repair /opt/media ownership for {{ admin_user }}
+  # Recursive chown on a multi-TB tree is slow but only fires when the
+  # detector above flagged drift, so steady state is no-op.
+  ansible.builtin.command: chown -R {{ admin_user }}:{{ admin_user }} /opt/media
+  when: storage_media_drift.stdout | length > 0
+  changed_when: true
+
+- name: Repair /opt/media perms (u=rwX,go=rX)
   # u=rwX,go=rX → +x on dirs and already-executable files only; .mp4/.srt
-  # don't gain executable bit. Recursive chown+chmod on a multi-TB tree is
-  # slow but only fires when the detector above flagged drift, so steady
-  # state is no-op.
-  ansible.builtin.shell: |
-    set -e
-    chown -R {{ admin_user }}:{{ admin_user }} /opt/media
-    chmod -R u=rwX,go=rX /opt/media
+  # don't gain executable bit.
+  ansible.builtin.command: chmod -R u=rwX,go=rX /opt/media
   when: storage_media_drift.stdout | length > 0
   changed_when: true
