@@ -19,11 +19,15 @@
 - name: Ensure media library subdirs exist (HDD, via storage bind)
   # Storage role binds /opt/media itself; we create subdirs AFTER that so
   # writes land on the btrfs target, not the shadowed SSD mount-point.
+  # Owned by admin_user (uid 1000) — matches Sonarr/Radarr/Bazarr/qBit
+  # PUID/PGID so they can write imports/.srt here. Jellyfin reads via its
+  # own container uid, world-readable 0755 covers it. root-owned would
+  # silently break the arr stack's import/subtitle writes.
   ansible.builtin.file:
     path: "{{ jellyfin_media_root }}/{{ item }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
     mode: "0755"
   loop:
     - movies
