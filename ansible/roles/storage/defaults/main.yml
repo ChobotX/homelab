@@ -20,6 +20,12 @@ storage_btrfs_snapshot_enabled: true
 storage_btrfs_snapshot_oncalendar: "*-*-* 02:00:00"
 storage_btrfs_snapshot_retention_days: 7
 
+# Owner of the /opt/media tree. Matches sonarr_puid / radarr_puid (1000) so
+# all arr containers can read+write the library. Self-heal task in this role
+# repairs any drift introduced by manual rsync/scp drops as root.
+storage_media_owner: chobotx
+storage_media_group: chobotx
+
 # Each entry becomes a bind mount: /mnt/elements/<dst> → <src>.
 # The src path is created as an empty mount point (so it exists even on a
 # fresh host before the consumer role runs). The dst path under
