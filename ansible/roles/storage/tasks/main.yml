@@ -192,3 +192,31 @@
   ansible.builtin.command: chmod -R u=rwX,go=rX /opt/media
   when: storage_media_drift.stdout | length > 0
   changed_when: true
+
+# ── Self-heal /opt/torrents ownership ──────────────────────────────────────
+# Same class of bug as /opt/media: storage_binds creates /opt/torrents as
+# root:root 0755, so qBittorrent (PUID 1000) can read its own children but
+# can't rename(/data/torrents/incomplete/X, /data/torrents/X) — the rename
+# needs write on BOTH parent dirs and the destination parent (/opt/torrents
+# itself) is root-owned. Result: every finished torrent fails its move with
+# "storage move failed ... Permission denied", Sonarr/Radarr never see the
+# import, and the queue stalls. Mirror the /opt/media detect-then-repair so
+# the steady state is no-op.
+- name: Detect ownership drift under /opt/torrents
+  ansible.builtin.command: >-
+    find /opt/torrents
+    ( ! -user {{ admin_user }} -o ! -group {{ admin_user }} )
+    -print -quit
+  register: storage_torrents_drift
+  changed_when: false
+  check_mode: false
+
+- name: Repair /opt/torrents ownership for {{ admin_user }}
+  ansible.builtin.command: chown -R {{ admin_user }}:{{ admin_user }} /opt/torrents
+  when: storage_torrents_drift.stdout | length > 0
+  changed_when: true
+
+- name: Repair /opt/torrents perms (u=rwX,go=rX)
+  ansible.builtin.command: chmod -R u=rwX,go=rX /opt/torrents
+  when: storage_torrents_drift.stdout | length > 0
+  changed_when: true
