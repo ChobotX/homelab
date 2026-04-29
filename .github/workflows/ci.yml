@@ -501,8 +501,16 @@ jobs:
     # runtime is registered before tdarr's compose tries `runtime: nvidia`.
     # Same skipped-upstream tolerance as deploy-jellyfin: `!failure() &&
     # !cancelled()` lets it run when nvidia_container was a no-op skip.
+    #
+    # MUST also wait on deploy-storage. Tdarr role chowns /opt/tdarr/cache to
+    # PUID 1000 (linuxserver-style image), but that path is a bind mount
+    # owned by storage role. Without this `needs:` edge the two jobs race in
+    # parallel — tdarr chown fires on the SSD-side dir, then storage's bind
+    # activate shadows it with the root-owned btrfs subdir, leaving the
+    # live mount root:root and Tdarr's transcode worker unable to write
+    # scratch (EACCES).
     name: deploy (tdarr)
-    needs: [deploy-docker, deploy-ufw, deploy-nvidia-container, changes]
+    needs: [deploy-docker, deploy-ufw, deploy-nvidia-container, deploy-storage, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
