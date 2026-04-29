@@ -17,6 +17,7 @@
 #   vaultwarden    → secret vault behind Traefik
 #   jellyfin       → media server behind Traefik (HW transcode if /dev/dri present)
 #   jellyfin_plugins → community plugins (DLL drop into jellyfin config/plugins)
+#   tdarr          → automated transcode farm (NVENC HEVC, gated on NVIDIA GPU)
 #   syncthing      → remote media ingest (sync protocol bound to WG IP)
 #   qbittorrent    → config dirs + role-default vars (container in gluetun stack)
 #   prowlarr       → config dir + role-default vars (container in gluetun stack)
@@ -152,6 +153,11 @@
       tags: [jellyfin, media, services]
     - role: jellyfin_plugins
       tags: [jellyfin_plugins, jellyfin, media, services]
+    - role: tdarr
+      tags: [tdarr, media, services]
+      when:
+        - tdarr_enabled | default(true) | bool
+        - nvidia_gpu_enabled | default(false) | bool
     - role: syncthing
       tags: [syncthing, media, services]
     # Arr stack — keep these together and AFTER traefik/jellyfin/syncthing.

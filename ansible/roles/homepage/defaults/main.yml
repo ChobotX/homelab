@@ -74,6 +74,11 @@ homepage_services:
         href: "https://{{ qbittorrent_host }}"
         icon: qbittorrent.svg
         description: Download client (via Mullvad)
+      - name: Tdarr
+        href: "https://{{ tdarr_host }}"
+        icon: tdarr.svg
+        description: Library transcode farm (NVENC HEVC)
+        siteMonitor: "http://tdarr:8265/api/v2/status"
   - group: Automation
     items:
       - name: n8n

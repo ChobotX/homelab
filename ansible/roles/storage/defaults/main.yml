@@ -61,3 +61,13 @@ storage_binds:
   # still carries them to keep the SSD free for OS + docker overlays.
   - src: /opt/ollama/models
     dst: ollama-models
+  # Tdarr — server state (queue DB, history, plugin checkout) + per-run logs.
+  # Transcode scratch goes to in-container tmpfs (RAM), not here. Server state
+  # is small but expensive to lose (queue progress, file fingerprints), logs
+  # are large + churn-heavy → both belong off the SSD.
+  - src: /opt/tdarr/server
+    dst: tdarr-server
+  - src: /opt/tdarr/configs
+    dst: tdarr-configs
+  - src: /opt/tdarr/logs
+    dst: tdarr-logs

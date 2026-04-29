@@ -1,0 +1,76 @@
+---
+# Tdarr — automated transcode farm. Mirrors the Jellyfin role pattern:
+# /opt/<service> hosts the compose project; data subdirs are bind-mounted from
+# btrfs (storage role); container drops all caps + no-new-privileges; swap
+# happens via per-service handler with `up --wait --force-recreate`.
+
+- name: Assert NVIDIA GPU is present
+  # Tdarr in this homelab is GPU-only — Pascal P2000 NVENC. CPU-only mode
+  # would burn host CPU on a server already running Jellyfin/observability/
+  # arr stack. Refuse to roll out without the GPU rather than silently
+  # degrading.
+  ansible.builtin.assert:
+    that: nvidia_gpu_enabled | default(false) | bool
+    fail_msg: |
+      Tdarr role requires nvidia_gpu_enabled (set from /usr/bin/nvidia-smi
+      presence in site.yml pre_tasks). No GPU means no NVENC; refusing to
+      deploy a CPU-only transcode farm on this host.
+
+- name: Ensure /opt/tdarr layout
+  # `server`, `configs`, `logs` are bind-mounted from /mnt/elements via the
+  # storage role — these are the SSD-side mountpoints (empty post-bind).
+  # Owner uid 1000 so the linuxserver-style PUID drop-in user can write.
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ tdarr_puid }}"
+    group: "{{ tdarr_pgid }}"
+    mode: "0755"
+  loop:
+    - /opt/tdarr
+    - /opt/tdarr/server
+    - /opt/tdarr/configs
+    - /opt/tdarr/logs
+    - /opt/tdarr/server/Tdarr/Plugins/Local
+
+- name: Deploy custom hardlink-skip plugin
+  # Keystone safety: skips files where st_nlink > 1, i.e. still hardlinked
+  # to /opt/torrents (qBit seeding). Without this, Tdarr would replace the
+  # /opt/media file in place, the /opt/torrents copy keeps the original
+  # inode alive, and we end up with 2 files on disk instead of saving space.
+  # Plugin lives in the local plugin dir so Tdarr loads it on startup.
+  ansible.builtin.copy:
+    src: tdarr-plugin-skip-hardlinked.js
+    dest: /opt/tdarr/server/Tdarr/Plugins/Local/Tdarr_Plugin_homelab_skip_hardlinked.js
+    owner: "{{ tdarr_puid }}"
+    group: "{{ tdarr_pgid }}"
+    mode: "0644"
+  notify: Swap tdarr service
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/tdarr/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Swap tdarr service
+
+- name: Template docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: /opt/tdarr/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap tdarr service
+
+- name: Bring up Tdarr stack
+  # Same first-deploy posture as the rest of the stack — `recreate: never`
+  # so the per-service handler owns the swap (with --wait gating).
+  community.docker.docker_compose_v2:
+    project_src: /opt/tdarr
+    state: present
+    pull: policy
+    recreate: never

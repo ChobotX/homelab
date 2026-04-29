@@ -1,0 +1,93 @@
+---
+# Tdarr — automated transcode farm. Single-container mode (server + internal
+# node). NVENC via NVIDIA container runtime (registered by nvidia_container
+# role). Fronted by Traefik on the `proxy` network, also on `observability`
+# so Prometheus can later scrape /api/v2/status if/when a tdarr-exporter is
+# added. No host port exposure — all traffic via Traefik on WG IP.
+services:
+  tdarr:
+    image: ${TDARR_IMAGE}
+    container_name: tdarr
+    restart: unless-stopped
+    # Tdarr writes SQLite-ish queue + history state on shutdown; give it a
+    # grace window before SIGKILL. Same shape as Jellyfin.
+    stop_grace_period: 30s
+    runtime: nvidia
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    env_file:
+      - .env
+    environment:
+      # NVIDIA container runtime — `compute,video,utility` is the minimum set
+      # for NVENC/NVDEC + nvidia-smi inside the container. No `display`,
+      # no `graphics` — keeps the surface tight.
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
+      # Tdarr internal config — single-container mode where the same process
+      # runs both server and one local node, so no remote node setup needed.
+      serverIP: 0.0.0.0
+      serverPort: "${TDARR_SERVER_PORT}"
+      webUIPort: "${TDARR_WEBUI_PORT}"
+      internalNode: "true"
+      nodeName: "${TDARR_NODE_NAME}"
+      inContainer: "true"
+      ffmpegVersion: "${TDARR_FFMPEG_VERSION}"
+      PUID: "${TDARR_PUID}"
+      PGID: "${TDARR_PGID}"
+      TZ: "${TZ}"
+    volumes:
+      # Server state: queue DB, history, plugin checkout, custom local plugins.
+      - ./server:/app/server
+      # configs: per-library tdarr settings exported from UI (small, stable).
+      - ./configs:/app/configs
+      # logs: rotate-heavy, lives on HDD.
+      - ./logs:/app/logs
+      # Media library — rw because Tdarr replaces files in place after a
+      # successful transcode + healthcheck. The hardlink-skip plugin
+      # (Plugins/Local/Tdarr_Plugin_homelab_skip_hardlinked.js) prevents
+      # any file still seeded from /opt/torrents from being touched.
+      - ${TDARR_MEDIA_ROOT}:/media
+    # Transcode scratch → RAM. Spares HDD from per-second writes; contents
+    # are disposable and small per-file.
+    tmpfs:
+      - /temp:size=${TDARR_TRANSCODE_CACHE_SIZE}
+    networks:
+      - proxy
+      - observability
+    healthcheck:
+      # Tdarr REST endpoint. Returns 200 with JSON status once both server
+      # and internal node have come up.
+      test:
+        ["CMD-SHELL", "curl -fsS http://localhost:${TDARR_WEBUI_PORT}/api/v2/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+
+      traefik.http.routers.tdarr.rule: "Host(`${TDARR_HOST}`)"
+      traefik.http.routers.tdarr.entrypoints: "websecure"
+      traefik.http.routers.tdarr.tls: "true"
+      traefik.http.routers.tdarr.tls.certresolver: "cloudflare"
+      traefik.http.routers.tdarr.service: "tdarr"
+      # Tdarr ships with NO authentication on the WebUI by default. Stack
+      # `dashboard-auth@file` (basic auth) on top of `wg-only@file` — the
+      # same posture used by Sonarr/Radarr/Bazarr/Prowlarr, NOT the
+      # bare wg-only used by Jellyfin (Jellyfin has its own login).
+      traefik.http.routers.tdarr.middlewares: "wg-only@file,dashboard-auth@file,security-headers@file"
+      traefik.http.services.tdarr.loadbalancer.server.port: "${TDARR_WEBUI_PORT}"
+      # Active healthcheck — Traefik buffers new TCP during a swap so the
+      # gap becomes a sub-second blip, same pattern as Jellyfin.
+      traefik.http.services.tdarr.loadbalancer.healthcheck.path: "/api/v2/status"
+      traefik.http.services.tdarr.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.tdarr.loadbalancer.healthcheck.timeout: "2s"
+
+networks:
+  proxy:
+    external: true
+  observability:
+    external: true

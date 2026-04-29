@@ -18,6 +18,11 @@ backup_paths:
   - /opt/sonarr/config
   - /opt/radarr/config
   - /opt/bazarr/config
+  # Tdarr server state — queue progress, file fingerprints, history DB, custom
+  # local plugins. Small (< 1 GiB), expensive to lose: a fresh start would
+  # rescan + re-fingerprint the entire library. Logs are excluded above
+  # via *.log glob.
+  - /opt/tdarr/server
   - /etc/wireguard
   - /etc/ssh
   # Host-truth + secrets dir — Mullvad WG key, GitHub PAT, Cloudflare token,

@@ -1,0 +1,48 @@
+---
+# Tdarr — automated transcode farm. Single-container mode (server + internal
+# node). Targets HEVC main10 via NVENC on the host's Quadro P2000 to compress
+# h264 library without quality loss. Jellyfin keeps Intel QSV for live
+# playback transcode — separate hardware paths, no contention.
+
+tdarr_enabled: true
+
+# Pin: pull `latest` once, freeze digest, bump deliberately. Same posture as
+# qBittorrent / Radarr / Jellyfin in this repo.
+# Tag 2.50.01 (latest stable as of 2026-04-28).
+tdarr_image: "ghcr.io/haveagitgat/tdarr:2.50.01@sha256:67d6a456d3c7963d2bc50318275843015af76e1f4dced3b1c5a91f8874d230bf"
+
+tdarr_host: "tdarr.{{ homelab_domain }}"
+
+# linuxserver-style PUID/PGID — match admin_user (uid 1000) so Tdarr can read
+# /opt/media via the existing storage role chown self-heal AND so the new
+# files it writes match arr stack expectations on re-import.
+tdarr_puid: 1000
+tdarr_pgid: 1000
+
+# Library scope — both movies + TV from day 1 (user decision 2026-04-28).
+# Each entry becomes a Tdarr "library" via the bootstrap UI step; the role
+# only mounts the paths and provides the hardlink-skip plugin.
+tdarr_media_root: /opt/media
+
+# Workers — single GPU, single transcode worker (Pascal NVENC sessionCap=2 in
+# stock driver, leave headroom for Jellyfin's occasional NVENC use). One CPU
+# health-check worker is fine — ffprobe pass on output is short.
+tdarr_workers_transcode_gpu: 1
+tdarr_workers_transcode_cpu: 0
+tdarr_workers_health_gpu: 0
+tdarr_workers_health_cpu: 1
+
+# In-container tmpfs scratch for active transcodes. RAM-backed → spares HDD
+# from per-second writes. 16 GiB covers one 4K HEVC encode without spill.
+tdarr_transcode_cache_size: "16g"
+
+# Tdarr ports — webUI 8265, server↔node RPC 8266 (internal only).
+tdarr_webui_port: 8265
+tdarr_server_port: 8266
+
+# ffmpeg version shipped inside the Tdarr image (`7` selects the bundled
+# ffmpeg7 — better NVENC defaults vs ffmpeg5).
+tdarr_ffmpeg_version: "7"
+
+# Node label exposed to the Tdarr UI — useful when adding remote nodes later.
+tdarr_node_name: "homelab-p2000"

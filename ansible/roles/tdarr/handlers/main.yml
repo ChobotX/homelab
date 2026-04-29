@@ -1,0 +1,12 @@
+---
+# `up --wait` + container healthcheck + Traefik active loadbalancer healthcheck
+# keep the user-visible gap on a tdarr swap sub-second. Server SQLite state
+# flushes inside stop_grace_period (30s) — same posture as Jellyfin.
+
+- name: Swap tdarr service
+  ansible.builtin.command:
+    chdir: /opt/tdarr
+    # --force-recreate so bind-mounted env/compose changes trigger a restart
+    # (compose sees no service-spec diff otherwise — same Jellyfin pattern).
+    cmd: docker compose up -d --wait --no-deps --force-recreate tdarr
+  changed_when: true
