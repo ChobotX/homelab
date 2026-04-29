@@ -166,21 +166,30 @@ const plugin = (file, librarySettings, inputs, otherArguments) => {
   const minrate = Math.round(videoMaxrate * 0.5);
   const bufsize = videoMaxrate * 2;
 
-  // <io> is Tdarr's placeholder for `-i <input> ... <output>`. The hwaccel
-  // flags must come BEFORE -i, hence the manual layout. scale_cuda forces
-  // p010le (10-bit pixel format) — Pascal HEVC encoder needs the input on
-  // GPU in 10-bit before NVENC accepts profile main10.
+  // <io> is Tdarr's placeholder for `-i <input> ... <output>`. hwaccel flags
+  // must come BEFORE -i, hence the manual layout.
+  //
+  // 10-bit handling: -vf scale_cuda=format=p010le converts the cuda-side
+  // surface to p010le before NVENC reads it. NVENC then encodes profile
+  // main10 from that surface. Do NOT also set `-pix_fmt p010le` at the
+  // output level — ffmpeg inserts an auto_scale filter that conflicts with
+  // scale_cuda ("Impossible to convert between the formats supported by
+  // the filter 'Parsed_scale_cuda_0' and the filter 'auto_scale_0'") and
+  // the encoder errors out before the first frame.
+  //
+  // Stream specifiers use the underscore form (-spatial_aq:v) — that's what
+  // hevc_nvenc expects. Pascal can't do HEVC B-frames, so no -bf flag.
   const preset =
     ` -hwaccel cuda -hwaccel_output_format cuda <io>` +
     ` -map 0` +
-    ` -c:v hevc_nvenc -profile:v main10 -pix_fmt p010le` +
+    ` -c:v hevc_nvenc -profile:v main10` +
     ` -cq:v ${videoCq}` +
     ` -b:v ${target}k -minrate ${minrate}k -maxrate ${videoMaxrate}k -bufsize ${bufsize}k` +
-    ` -spatial-aq 1 -rc-lookahead 32` +
-    ` -vf scale_cuda=format=p010le` +
+    ` -spatial_aq:v 1 -rc-lookahead:v 32` +
     ` ${audioPreset}` +
     ` -c:s copy` +
-    ` -max_muxing_queue_size 9999`;
+    ` -max_muxing_queue_size 9999` +
+    ` -vf scale_cuda=format=p010le`;
 
   response.processFile = true;
   response.preset = preset;
