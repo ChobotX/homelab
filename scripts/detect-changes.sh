@@ -4,7 +4,7 @@
 #
 # Buckets (written to $GITHUB_OUTPUT):
 #   common / wireguard / ufw / ssh / fail2ban / storage / docker / nvidia_container — infra per-role
-#   observability / traefik / vaultwarden / jellyfin / syncthing / n8n / ollama / homepage / backup — apps per-role
+#   observability / traefik / vaultwarden / jellyfin / tdarr / syncthing / n8n / ollama / homepage / backup — apps per-role
 #   shared — set when anything outside a specific role touches the deploy
 #            surface (playbooks, group_vars, common role, requirements,
 #            deploy-tags action, smoke/prewarm scripts, ci.yml). When shared
@@ -36,7 +36,7 @@ out() {
   printf '  %-18s %s\n' "$1" "$2" >&2
 }
 
-BUCKETS=(shared common qos wireguard ufw ssh fail2ban storage docker nvidia_container observability traefik vaultwarden jellyfin syncthing gluetun qbittorrent prowlarr flaresolverr sonarr radarr bazarr n8n ollama homepage backup)
+BUCKETS=(shared common qos wireguard ufw ssh fail2ban storage docker nvidia_container observability traefik vaultwarden jellyfin tdarr syncthing gluetun qbittorrent prowlarr flaresolverr sonarr radarr bazarr n8n ollama homepage backup)
 
 force_full() {
   local reason="$1"
@@ -85,6 +85,7 @@ obs=false
 traefik=false
 vw=false
 jellyfin=false
+tdarr=false
 syncthing=false
 gluetun=false
 qbittorrent=false
@@ -123,6 +124,7 @@ while IFS= read -r f; do
     # jellyfin invocation (its role tags include `jellyfin`). Folded into the
     # jellyfin bucket so a plugin-only change still re-deploys jellyfin.
     ansible/roles/jellyfin_plugins/*) jellyfin=true ;;
+    ansible/roles/tdarr/*)         tdarr=true ;;
     ansible/roles/syncthing/*)     syncthing=true ;;
     ansible/roles/gluetun/*)       gluetun=true ;;
     ansible/roles/qbittorrent/*)   qbittorrent=true ;;
@@ -149,7 +151,7 @@ done <<< "$files"
 if [ "$shared" = true ]; then
   common=true; qos=true; wg=true; ufw=true; ssh=true; f2b=true; storage=true; docker=true
   nvidia_container=true
-  obs=true; traefik=true; vw=true; jellyfin=true; syncthing=true; n8n=true; ollama=true; hp=true; backup=true
+  obs=true; traefik=true; vw=true; jellyfin=true; tdarr=true; syncthing=true; n8n=true; ollama=true; hp=true; backup=true
   gluetun=true; qbittorrent=true; prowlarr=true; flaresolverr=true; sonarr=true; radarr=true; bazarr=true
 fi
 
@@ -185,6 +187,7 @@ out observability "$obs"
 out traefik "$traefik"
 out vaultwarden "$vw"
 out jellyfin "$jellyfin"
+out tdarr "$tdarr"
 out syncthing "$syncthing"
 out gluetun "$gluetun"
 out qbittorrent "$qbittorrent"

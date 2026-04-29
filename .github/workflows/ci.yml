@@ -225,6 +225,7 @@ jobs:
       traefik: ${{ steps.detect.outputs.traefik }}
       vaultwarden: ${{ steps.detect.outputs.vaultwarden }}
       jellyfin: ${{ steps.detect.outputs.jellyfin }}
+      tdarr: ${{ steps.detect.outputs.tdarr }}
       syncthing: ${{ steps.detect.outputs.syncthing }}
       gluetun: ${{ steps.detect.outputs.gluetun }}
       qbittorrent: ${{ steps.detect.outputs.qbittorrent }}
@@ -495,6 +496,28 @@ jobs:
         with:
           tags: jellyfin
 
+  deploy-tdarr:
+    # Tdarr — automated transcode farm. Gates on nvidia_container so the GPU
+    # runtime is registered before tdarr's compose tries `runtime: nvidia`.
+    # Same skipped-upstream tolerance as deploy-jellyfin: `!failure() &&
+    # !cancelled()` lets it run when nvidia_container was a no-op skip.
+    name: deploy (tdarr)
+    needs: [deploy-docker, deploy-ufw, deploy-nvidia-container, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.tdarr == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: tdarr
+
   deploy-syncthing:
     name: deploy (syncthing)
     needs: [deploy-docker, deploy-ufw, changes]
@@ -723,7 +746,7 @@ jobs:
     # backup proceed even when some apps were skipped by the change gate —
     # `needs:` default would cascade-skip it otherwise. Gated on
     # changes.backup; weekly schedule force-fulls to heal drift.
-    needs: [deploy-qos, deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-syncthing, deploy-gluetun, deploy-qbittorrent, deploy-prowlarr, deploy-flaresolverr, deploy-sonarr, deploy-radarr, deploy-bazarr, deploy-n8n, deploy-ollama, deploy-nvidia-container, deploy-homepage, changes]
+    needs: [deploy-qos, deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-tdarr, deploy-syncthing, deploy-gluetun, deploy-qbittorrent, deploy-prowlarr, deploy-flaresolverr, deploy-sonarr, deploy-radarr, deploy-bazarr, deploy-n8n, deploy-ollama, deploy-nvidia-container, deploy-homepage, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
