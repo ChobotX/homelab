@@ -34,18 +34,31 @@
     - /opt/tdarr/cache
     - /opt/tdarr/server/Tdarr/Plugins/Local
 
-- name: Deploy custom hardlink-skip plugin
-  # Keystone safety: skips files where st_nlink > 1, i.e. still hardlinked
-  # to /opt/torrents (qBit seeding). Without this, Tdarr would replace the
-  # /opt/media file in place, the /opt/torrents copy keeps the original
-  # inode alive, and we end up with 2 files on disk instead of saving space.
-  # Plugin lives in the local plugin dir so Tdarr loads it on startup.
+- name: Deploy custom local plugins
+  # Local plugins shipped via IaC, mounted into Tdarr's plugin dir so the
+  # node loads them on startup. Audited in-tree, no community-plugin drift.
+  #
+  #   skip_hardlinked        — keystone safety, skip files with nlink > 1
+  #                            (still seeded by qBit, replacing them would
+  #                            break the hardlink and double disk usage).
+  #   hevc_nvenc_streaming   — HEVC NVENC encode with explicit maxrate cap
+  #                            and audio re-encode to E-AC3 640k, sized so
+  #                            output streams over a 20 Mbps WAN with audio
+  #                            and buffering headroom (Migz1FFMPEG hardcodes
+  #                            cq=19 + audio passthrough → too fat for WAN).
   ansible.builtin.copy:
-    src: tdarr-plugin-skip-hardlinked.js
-    dest: /opt/tdarr/server/Tdarr/Plugins/Local/Tdarr_Plugin_homelab_skip_hardlinked.js
+    src: "{{ item.src }}"
+    dest: "/opt/tdarr/server/Tdarr/Plugins/Local/{{ item.dest }}"
     owner: "{{ tdarr_puid }}"
     group: "{{ tdarr_pgid }}"
     mode: "0644"
+  loop:
+    - src: tdarr-plugin-skip-hardlinked.js
+      dest: Tdarr_Plugin_homelab_skip_hardlinked.js
+    - src: tdarr-plugin-hevc-nvenc-streaming.js
+      dest: Tdarr_Plugin_homelab_hevc_nvenc_streaming.js
+  loop_control:
+    label: "{{ item.dest }}"
   notify: Swap tdarr service
 
 - name: Template .env
