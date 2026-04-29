@@ -54,10 +54,12 @@ services:
       # (Plugins/Local/Tdarr_Plugin_homelab_skip_hardlinked.js) prevents
       # any file still seeded from /opt/torrents from being touched.
       - ${TDARR_MEDIA_ROOT}:/media
-    # Transcode scratch → RAM. Spares HDD from per-second writes; contents
-    # are disposable and small per-file.
-    tmpfs:
-      - /temp:size=${TDARR_TRANSCODE_CACHE_SIZE}
+      # Transcode scratch — disk-backed (btrfs via storage role bind). Was
+      # tmpfs but 16 GiB cap couldn't hold a 1080p Remux re-encode (HEVC
+      # video ~14 GiB + DTS-HD MA passthrough ~2.7 GiB) and 4K HEVC outputs
+      # need 30-60 GiB. btrfs zstd:3 handles the write churn; sequential
+      # write speed >> NVENC encode rate so disk-bound is not a bottleneck.
+      - ./cache:/temp
     networks:
       - proxy
       - observability

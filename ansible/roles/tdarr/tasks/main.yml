@@ -31,6 +31,7 @@
     - /opt/tdarr/server
     - /opt/tdarr/configs
     - /opt/tdarr/logs
+    - /opt/tdarr/cache
     - /opt/tdarr/server/Tdarr/Plugins/Local
 
 - name: Deploy custom hardlink-skip plugin

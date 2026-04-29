@@ -71,3 +71,9 @@ storage_binds:
     dst: tdarr-configs
   - src: /opt/tdarr/logs
     dst: tdarr-logs
+  # Tdarr transcode scratch — was tmpfs, but 16 GiB cap couldn't hold 1080p
+  # remux output (HEVC video + DTS-HD MA passthrough ~16.5 GiB, hits ENOSPC).
+  # 4K outputs need 30-60 GiB. Disk cache trades RAM speed for unlimited size
+  # and removes OOM risk. btrfs CoW + zstd handles the write churn fine.
+  - src: /opt/tdarr/cache
+    dst: tdarr-cache

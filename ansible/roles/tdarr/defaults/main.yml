@@ -32,10 +32,6 @@ tdarr_workers_transcode_cpu: 0
 tdarr_workers_health_gpu: 0
 tdarr_workers_health_cpu: 1
 
-# In-container tmpfs scratch for active transcodes. RAM-backed → spares HDD
-# from per-second writes. 16 GiB covers one 4K HEVC encode without spill.
-tdarr_transcode_cache_size: "16g"
-
 # Tdarr ports — webUI 8265, server↔node RPC 8266 (internal only).
 tdarr_webui_port: 8265
 tdarr_server_port: 8266
