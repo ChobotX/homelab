@@ -15,8 +15,13 @@ services:
     runtime: nvidia
     security_opt:
       - no-new-privileges:true
-    cap_drop:
-      - ALL
+    # NOTE: NOT `cap_drop: ALL` — Tdarr uses s6-overlay init which needs raw
+    # root caps (SETGID/SETUID/CHOWN) to drop privileges to PUID/PGID at
+    # startup. With cap_drop:ALL, s6-applyuidgid logs "Operation not
+    # permitted" in a tight loop, the Tdarr_Server never binds :8265, and
+    # the healthcheck flatlines. Same posture as qbittorrent/radarr/sonarr/
+    # bazarr in this repo (also linuxserver/s6-based).
+    # `security_opt: no-new-privileges:true` still blocks setuid escalation.
     env_file:
       - .env
     environment:
