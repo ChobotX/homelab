@@ -183,9 +183,9 @@ jobs:
   #                                    │
   #                                    ▼
   #                             deploy-finalize
-  #               needs deploy-backup + deploy-ssh; if uses always() + job
-  #               results so smoke waits when ssh ran but does not skip when
-  #               ssh bucket false (deploy-ssh job skipped).
+  #               needs deploy-backup + deploy-ssh + deploy-fail2ban; always()
+  #               + job results so smoke waits for parallel infra jobs when they
+  #               run, without skipping finalize when ssh/f2b buckets false.
   #                          (smoke-deploy.sh + ntfy push)
   #
   # Every deploy job is change-gated; weekly schedule force-fulls via
@@ -775,10 +775,10 @@ jobs:
 
   deploy-finalize:
     name: deploy (smoke + ntfy notify)
-    # deploy-backup and deploy-ssh run in parallel; smoke must not start until
-    # both complete. deploy-ssh is skipped when the ssh bucket is false — without
-    # always() + result checks, needs: would skip finalize when ssh skipped.
-    needs: [deploy-backup, deploy-ssh]
+    # deploy-backup may finish before sibling infra jobs (ssh, fail2ban); smoke
+    # must wait for those jobs too when they run. Same always()+results pattern
+    # as ssh — skipped buckets must not skip finalize.
+    needs: [deploy-backup, deploy-ssh, deploy-fail2ban]
     if: >-
       always()
       && !cancelled()
@@ -786,6 +786,7 @@ jobs:
           || github.event_name == 'schedule')
       && needs.deploy-backup.result == 'success'
       && (needs.deploy-ssh.result == 'success' || needs.deploy-ssh.result == 'skipped')
+      && (needs.deploy-fail2ban.result == 'success' || needs.deploy-fail2ban.result == 'skipped')
     runs-on: [self-hosted, linux, homelab]
     timeout-minutes: 5
     steps:
