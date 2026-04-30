@@ -146,12 +146,6 @@ while IFS= read -r f; do
   fi
 done <<< "$files"
 
-# ssh_hardening deploy-ssh needs deploy-common in CI. ssh-only commits used to
-# leave common=false → deploy-common skipped → deploy-ssh never queued.
-if [ "$ssh" = true ]; then
-  common=true
-fi
-
 # Shared implies every bucket — simpler than repeating `|| shared` in every
 # job's `if:`.
 if [ "$shared" = true ]; then

@@ -183,7 +183,9 @@ jobs:
   #                                    │
   #                                    ▼
   #                             deploy-finalize
-  #               needs deploy-backup + deploy-ssh (smoke after sshd settles)
+  #               needs deploy-backup + deploy-ssh; if uses always() + job
+  #               results so smoke waits when ssh ran but does not skip when
+  #               ssh bucket false (deploy-ssh job skipped).
   #                          (smoke-deploy.sh + ntfy push)
   #
   # Every deploy job is change-gated; weekly schedule force-fulls via
@@ -331,15 +333,13 @@ jobs:
           tags: ufw
 
   deploy-ssh:
-    # Always queued on main/schedule after deploy-common so downstream jobs
-    # (deploy-finalize smoke) can `needs:` it without skip-cascade when the
-    # ssh bucket is false — avoids racing sshd reload vs smoke checks.
     name: deploy (ssh)
     needs: [deploy-common, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
           || github.event_name == 'schedule')
+      && needs.changes.outputs.ssh == 'true'
     runs-on: [self-hosted, linux, homelab]
     timeout-minutes: 10
     steps:
@@ -347,12 +347,8 @@ jobs:
         with:
           ref: ${{ github.sha }}
       - uses: ./.github/actions/deploy-tags
-        if: needs.changes.outputs.ssh == 'true'
         with:
           tags: ssh
-      - name: Skip ansible (ssh bucket unchanged)
-        if: needs.changes.outputs.ssh != 'true'
-        run: echo '::notice::ssh bucket unchanged — skipping ansible tags ssh'
 
   deploy-fail2ban:
     name: deploy (fail2ban)
@@ -779,14 +775,17 @@ jobs:
 
   deploy-finalize:
     name: deploy (smoke + ntfy notify)
-    # Same skipped-upstream logic as deploy-backup. deploy-ssh is listed even
-    # when its ansible step is skipped — job always completes so smoke cannot
-    # race sshd reload from a concurrent ssh deploy.
+    # deploy-backup and deploy-ssh run in parallel; smoke must not start until
+    # both complete. deploy-ssh is skipped when the ssh bucket is false — without
+    # always() + result checks, needs: would skip finalize when ssh skipped.
     needs: [deploy-backup, deploy-ssh]
     if: >-
-      !failure() && !cancelled()
+      always()
+      && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
           || github.event_name == 'schedule')
+      && needs.deploy-backup.result == 'success'
+      && (needs.deploy-ssh.result == 'success' || needs.deploy-ssh.result == 'skipped')
     runs-on: [self-hosted, linux, homelab]
     timeout-minutes: 5
     steps:
