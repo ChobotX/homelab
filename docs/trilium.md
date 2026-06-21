@@ -15,24 +15,23 @@ read/write notes through it. Trilium's ETAPI gives Claude full CRUD.
 
 Claude (terminal + phone, both on WG) talks to Trilium through the **client-side
 `triliumnext-mcp`** server, registered at **user scope** so it's available in
-every project:
+every project. Run once on each WG-connected machine that runs Claude Code:
 
 ```bash
-# On a WG-connected machine. Token + domain come from the host (see below).
-export TRILIUM_ETAPI_TOKEN="$(ssh homelab 'sudo cat /etc/homelab/secrets/trilium_etapi_token')"
-export HOMELAB_DOMAIN="$(ssh homelab 'sudo awk -F\" /^homelab_domain:/{print \$2}\" /etc/homelab/config.yml')"  # or set manually
-
+TOK=$(ssh homelab 'sudo cat /etc/homelab/secrets/trilium_etapi_token')
 claude mcp add -s user trilium \
-  -e TRILIUM_API_URL="https://trilium.${HOMELAB_DOMAIN}/etapi" \
-  -e TRILIUM_API_TOKEN="${TRILIUM_ETAPI_TOKEN}" \
+  -e TRILIUM_API_URL="https://trilium.homelab.owebs.cz/etapi" \
+  -e TRILIUM_API_TOKEN="$TOK" \
   -e PERMISSIONS="READ;WRITE" \
   -- npx -y triliumnext-mcp
+# verify: `claude mcp get trilium` → Status: ✔ Connected
 ```
 
-The token never lands in git — it lives only at
-`/etc/homelab/secrets/trilium_etapi_token` on the host and in the user-scope MCP
-config. The MCP only works over the WG tunnel (matches the `wg-only`
-middleware).
+`trilium.homelab.owebs.cz` resolves to the WG IP (10.8.0.6), so the MCP only
+works over the tunnel (matches the `wg-only` middleware). The token never lands
+in git — it lives at `/etc/homelab/secrets/trilium_etapi_token` on the host and
+in `~/.claude.json` (user-local). The `/idea` skill (`~/.claude/skills/idea`)
+drives the `mcp__trilium__*` tools this server exposes.
 
 ## Headless bootstrap (IaC, no UI clicks)
 
