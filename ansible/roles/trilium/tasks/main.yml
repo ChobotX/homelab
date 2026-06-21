@@ -1,0 +1,162 @@
+---
+# Self-mint the web-login password if absent — same posture as n8n's
+# encryption key / joplin's pg password. `creates:` makes it idempotent.
+- name: Ensure trilium password exists on target
+  ansible.builtin.shell: |
+    set -euo pipefail
+    install -m 0400 -o root -g root -T \
+      <(tr -dc 'A-Za-z0-9' </dev/urandom | head -c {{ trilium_password_length }}) \
+      /etc/homelab/secrets/trilium_password
+  args:
+    executable: /bin/bash
+    creates: /etc/homelab/secrets/trilium_password
+
+- name: Read trilium password from target
+  ansible.builtin.slurp:
+    src: /etc/homelab/secrets/trilium_password
+  register: trilium_password_slurp
+  no_log: true
+
+- name: Set trilium_password fact
+  ansible.builtin.set_fact:
+    trilium_password: "{{ (trilium_password_slurp.content | b64decode).strip() }}"
+  no_log: true
+
+- name: Ensure /opt/trilium layout
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+    mode: "0755"
+  loop:
+    - { path: /opt/trilium, owner: root }
+    # Bind-mounted to /home/node/trilium-data (node uid 1000). The image
+    # entrypoint chowns it, but pre-set the owner so a first-boot race can't
+    # leave document.db root-owned.
+    - { path: "{{ trilium_data_dir }}", owner: "1000" }
+
+- name: Template .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/trilium/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Swap trilium service
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/trilium/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap trilium service
+
+- name: Bring up trilium stack
+  # First-deploy safety net. `recreate: never` leaves a running container
+  # untouched on compose/image changes so the handler owns every swap.
+  community.docker.docker_compose_v2:
+    project_src: /opt/trilium
+    state: present
+    pull: policy
+    recreate: never
+
+# Run any pending swap NOW so the container is up (and --wait-healthy) before
+# the ETAPI bootstrap probes it.
+- name: Apply pending trilium swap before bootstrap
+  ansible.builtin.meta: flush_handlers
+
+# --- ETAPI bootstrap (first deploy only) --------------------------------
+# Trilium ships uninitialized with no password. We drive its HTTP setup once:
+#   1. POST /api/setup/new-document   → create the SQLite document (204)
+#   2. POST /set-password             → set the web-login password (pre-init
+#                                       only, no auth) (302)
+#   3. POST /etapi/auth/login         → mint the ETAPI token
+# Guarded on the token file so re-converges never re-init or rotate. We reach
+# the container by its proxy-network IP — Traefik's wg-only middleware blocks
+# the runner's SNAT, so we bypass the proxy for the bootstrap.
+- name: Check for existing ETAPI token
+  ansible.builtin.stat:
+    path: /etc/homelab/secrets/trilium_etapi_token
+  register: trilium_token_stat
+
+- name: Bootstrap Trilium and mint ETAPI token
+  when: not trilium_token_stat.stat.exists
+  block:
+    - name: Wait for trilium container to be healthy
+      community.docker.docker_container_info:
+        name: trilium
+      register: trilium_ci
+      retries: 30
+      delay: 2
+      until: (trilium_ci.container.State.Health.Status | default('')) == 'healthy'
+
+    - name: Set trilium bootstrap URL (proxy-net container IP)
+      ansible.builtin.set_fact:
+        trilium_url: "http://{{ trilium_ci.container.NetworkSettings.Networks.proxy.IPAddress }}:8080"
+
+    - name: Read setup status
+      ansible.builtin.uri:
+        url: "{{ trilium_url }}/api/setup/status"
+        return_content: true
+      register: trilium_setup
+      retries: 15
+      delay: 2
+      until: trilium_setup.status == 200
+
+    - name: Initialize new Trilium document
+      ansible.builtin.uri:
+        url: "{{ trilium_url }}/api/setup/new-document"
+        method: POST
+        body_format: json
+        body: {}
+        status_code: [204]
+      when: not trilium_setup.json.isInitialized
+
+    - name: Set initial web-login password (valid only pre-init)
+      ansible.builtin.uri:
+        url: "{{ trilium_url }}/set-password"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          password1: "{{ trilium_password }}"
+          password2: "{{ trilium_password }}"
+        follow_redirects: none
+        status_code: [200, 302]
+      no_log: true
+      when: not trilium_setup.json.isInitialized
+
+    - name: Mint ETAPI token via login
+      ansible.builtin.uri:
+        url: "{{ trilium_url }}/etapi/auth/login"
+        method: POST
+        body_format: json
+        body:
+          password: "{{ trilium_password }}"
+        status_code: [200, 201]
+        return_content: true
+      register: trilium_login
+      retries: 10
+      delay: 2
+      until: (trilium_login.status in [200, 201]) and (trilium_login.json.authToken is defined)
+      no_log: true
+
+    - name: Store ETAPI token on target
+      ansible.builtin.copy:
+        content: "{{ trilium_login.json.authToken }}"
+        dest: /etc/homelab/secrets/trilium_etapi_token
+        owner: root
+        group: root
+        mode: "0400"
+      no_log: true
+
+    - name: Verify ETAPI auth works
+      ansible.builtin.uri:
+        url: "{{ trilium_url }}/etapi/app-info"
+        headers:
+          Authorization: "{{ trilium_login.json.authToken }}"
+        status_code: [200]
+      no_log: true

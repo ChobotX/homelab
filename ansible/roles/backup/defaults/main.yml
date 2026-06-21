@@ -9,6 +9,11 @@ backup_paths:
   - /opt/observability/data/grafana
   - /opt/observability/data/alertmanager
   - /opt/n8n/data
+  # Trilium notes — SQLite document.db plus Trilium's own rolling
+  # data/backup copies. Backed up directly (like vaultwarden/n8n); SQLite is
+  # crash-consistent enough for restic's nightly snapshot. Restore = stop
+  # container, restic-restore the dir, chown 1000:1000, start.
+  - /opt/trilium/data
   # Arr stack config — small (< 1 GiB combined), expensive to rebuild (indexer
   # wiring, download client API keys, library metadata, subtitle prefs).
   # /opt/torrents + /opt/media themselves are intentionally NOT backed up:

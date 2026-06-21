@@ -1,0 +1,60 @@
+---
+# TriliumNext — notes backend behind Traefik on the `proxy` network.
+# WG-only reachability gated by Traefik's wg-only@file middleware. No host
+# port exposure: the role's ETAPI bootstrap reaches the container by its
+# proxy-network IP, not through Traefik (the CI runner's SNAT can't pass the
+# wg-only ipAllowList — same reason the ntfy notify uses docker exec).
+#
+# Single service, SQLite — no DB sidecar. Data dir is a bind mount so restic
+# backs up document.db directly.
+services:
+  trilium:
+    image: ${TRILIUM_IMAGE}
+    container_name: trilium
+    restart: unless-stopped
+    stop_grace_period: 30s
+    # NOTE: unlike joplin we do NOT `cap_drop: ALL`. The TriliumNext image's
+    # entrypoint (start-docker.sh) runs as root to usermod/chown the data dir
+    # then `su` to the node user — dropping all caps makes that fail and the
+    # container never boots. no-new-privileges is kept; WG is the real moat.
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    networks:
+      - proxy
+    volumes:
+      - ${TRILIUM_DATA_DIR}:/home/node/trilium-data
+    healthcheck:
+      # /api/health-check returns {"status":"ok"} once the HTTP server is up.
+      # Node ≥18 global fetch — the image ships node but not a stable curl.
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:8080/api/health-check').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+
+      traefik.http.routers.trilium.rule: "Host(`${TRILIUM_HOST}`)"
+      traefik.http.routers.trilium.entrypoints: "websecure"
+      traefik.http.routers.trilium.tls: "true"
+      traefik.http.routers.trilium.tls.certresolver: "cloudflare"
+      traefik.http.routers.trilium.service: "trilium"
+      # WG + Trilium's own login. WG is the moat; Trilium's password handles
+      # the human-facing web UI, the ETAPI token handles programmatic access.
+      traefik.http.routers.trilium.middlewares: "wg-only@file,security-headers@file"
+      traefik.http.services.trilium.loadbalancer.server.port: "8080"
+      # Active healthcheck — Traefik buffers connects while the backend is
+      # unhealthy (mid-swap), turning a recreate into a sub-second blip.
+      traefik.http.services.trilium.loadbalancer.healthcheck.path: "/api/health-check"
+      traefik.http.services.trilium.loadbalancer.healthcheck.interval: "5s"
+      traefik.http.services.trilium.loadbalancer.healthcheck.timeout: "2s"
+
+networks:
+  proxy:
+    external: true

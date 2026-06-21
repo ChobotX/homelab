@@ -1,0 +1,21 @@
+---
+# TriliumNext — single-user hierarchical notes with a first-class REST API
+# (ETAPI). The ETAPI token is what Claude (terminal + phone, both over WG)
+# uses through the client-side triliumnext-mcp server (see repo .mcp.json).
+# Pinned by tag + digest; pull is by digest so the tag is cosmetic.
+trilium_image: "triliumnext/trilium:0.103.0@sha256:8e6bc939a6d5dbeed42d1b5b155bc790b1c28ca3ac414382d04d626903c62081"
+
+trilium_host: "trilium.{{ homelab_domain }}"
+
+# 32 chars of [A-Za-z0-9] ≈ 190 bits. Self-minted on first converge, used to
+# seed Trilium's web-login password AND to mint the ETAPI token via
+# /etapi/auth/login. Stored under /etc/homelab/secrets/ (in the backup set).
+# Losing it is recoverable only while the ETAPI token file survives.
+trilium_password_length: 32
+
+# SQLite (document.db) lives here, bind-mounted to /home/node/trilium-data.
+# Backed up directly by the backup role (no pg_dump — it's a single file +
+# Trilium's own rolling data/backup copies).
+trilium_data_dir: /opt/trilium/data
+
+trilium_instance_name: "homelab"

@@ -86,6 +86,13 @@ homepage_services:
         icon: n8n.svg
         description: Workflow automation / webhooks
         siteMonitor: "http://n8n:5678/healthz"
+  - group: Notes
+    items:
+      - name: Trilium
+        href: "https://{{ trilium_host }}"
+        icon: trilium.svg
+        description: Notes (TriliumNext) + ETAPI for AI
+        siteMonitor: "http://trilium:8080/api/health-check"
 # Per-instance additions (external PaaS, uptime pages, WG hub). Set in
 # /etc/homelab/config.yml; defaults to empty so no real URLs ship in git.
 homepage_services_extra: []

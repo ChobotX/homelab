@@ -28,6 +28,7 @@
 #   radarr         → movie library manager (direct, arr docker network)
 #   bazarr         → subtitle manager (direct, arr docker network)
 #   n8n            → workflow automation / webhook hub behind Traefik (WG-only)
+#   trilium        → notes (TriliumNext, SQLite) + ETAPI behind Traefik (WG-only)
 #   ollama         → local LLM inference (GPU), backend-only on proxy network
 #   homepage       → signpost page at home.<homelab_domain> (links + live widgets)
 #   backup         → restic systemd timer (last, so backup sees steady state)
@@ -62,6 +63,14 @@
       # are non-empty before starting.
       - mullvad_wireguard_private_key
       - mullvad_wireguard_addresses
+      # Trilium web-login password + ETAPI token — bootstrap doesn't pre-seed
+      # these, the trilium role self-mints the password and mints the token
+      # via Trilium's HTTP setup on first converge (see roles/trilium/
+      # tasks/main.yml). Listed here so the site-wide secret slurp pulls them
+      # into vars after that first converge for subsequent runs. The token is
+      # consumed client-side by .mcp.json (not by Ansible).
+      - trilium_password
+      - trilium_etapi_token
 
   # pre_tasks are tagged `always` so they fire even with --tags <role>.
   pre_tasks:
@@ -181,6 +190,8 @@
       tags: [bazarr, media, services]
     - role: n8n
       tags: [n8n, automation, services]
+    - role: trilium
+      tags: [trilium, notes, services]
     - role: ollama
       tags: [ollama, ai, services]
       when: nvidia_gpu_enabled | default(false) | bool
