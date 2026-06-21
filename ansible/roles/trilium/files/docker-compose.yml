@@ -19,12 +19,24 @@ services:
     # container never boots. no-new-privileges is kept; WG is the real moat.
     security_opt:
       - no-new-privileges:true
-    env_file:
-      - .env
+    # Container config is set inline as literals — NOT via env_file. The .env
+    # file is only for compose ${...} interpolation (image, traefik host), and
+    # several of those names (TRILIUM_HOST, TRILIUM_DATA_DIR) are reserved
+    # Trilium settings that crash the app if injected into the container
+    # (bind-to-hostname / wrong data dir). Keeping the two concerns separate
+    # avoids that footgun.
+    environment:
+      TRILIUM_GENERAL_INSTANCENAME: "homelab"
+      TRILIUM_NETWORK_HOST: "0.0.0.0"
+      TRILIUM_NETWORK_PORT: "8080"
     networks:
       - proxy
     volumes:
-      - ${TRILIUM_DATA_DIR}:/home/node/trilium-data
+      # Literal host path (NOT an env var): TRILIUM_DATA_DIR is a reserved
+      # Trilium setting — if it reached the container via env_file, Trilium
+      # would treat this host path as its in-container data dir and crash with
+      # ENOENT. The container always uses the image default /home/node/trilium-data.
+      - /opt/trilium/data:/home/node/trilium-data
     healthcheck:
       # /api/health-check returns {"status":"ok"} once the HTTP server is up.
       # Node ≥18 global fetch — the image ships node but not a stable curl.
