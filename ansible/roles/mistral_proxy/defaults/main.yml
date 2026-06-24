@@ -22,6 +22,7 @@ mistral_proxy_rate_per_min: 4
 # Burst so a quick tool-call sequence isn't throttled on the first extra
 # request; anything beyond gets 429 + Retry-After.
 mistral_proxy_burst: 2
-# Retry-After (seconds) on 429. rate=4/min ≈ one slot per 15s; 20s gives the
-# leaky bucket margin to refill. Hermes caps Retry-After at 120s.
-mistral_proxy_retry_after: 20
+# Retry-After (seconds) on 429. Must clear a full per-minute window so a retry
+# lands in a fresh budget — 3×20s could still fall inside one minute, so 40s.
+# Hermes caps Retry-After at 120s.
+mistral_proxy_retry_after: 40

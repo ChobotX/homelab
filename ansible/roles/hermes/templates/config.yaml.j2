@@ -32,7 +32,7 @@ terminal:
 # Iteration budget — runaway-loop circuit breaker for unattended operation.
 agent:
   max_turns: {{ hermes_max_turns }}
-  api_max_retries: 3
+  api_max_retries: {{ hermes_api_max_retries }}
 
 discord:
   require_mention: true

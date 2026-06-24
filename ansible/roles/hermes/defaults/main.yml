@@ -23,6 +23,11 @@ hermes_llm_base_url: "http://mistral-proxy/v1"
 # runaway tool loop can't burn the Mistral budget unbounded.
 hermes_max_turns: 90
 
+# API retry headroom. On a 429 Hermes honours the proxy's Retry-After (40s) and
+# retries; 5 attempts × ~40s comfortably outlasts the 4 req/min window so a
+# rate-limited call recovers instead of giving up. Was the default 3.
+hermes_api_max_retries: 5
+
 # Service endpoints the agent reaches. Loki/Prometheus by DNS over the
 # observability net; Trilium by DNS over the hermes net; Home Assistant by its
 # WG IP (reached through host routing — HA is not a docker container here).
