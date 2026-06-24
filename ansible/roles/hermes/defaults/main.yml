@@ -8,7 +8,7 @@
 # cannot stop/delete other services or touch the host. See tasks + compose.
 #
 # Pinned by tag + digest; pull is by digest so the tag is cosmetic.
-hermes_image: "nousresearch/hermes-agent:latest@sha256:802e8bd92217a7594038335813f93f1f6e9362975aed0593d2dd8568ceda5807"
+hermes_image: "nousresearch/hermes-agent:latest@sha256:39ce97f831e423408d85ccf7a4a00572726ab0704a1b0b3e6382336bba8d49e0"
 
 hermes_host: "hermes.{{ homelab_domain }}"
 
@@ -30,6 +30,8 @@ hermes_trilium_url: "http://trilium:8080"
 # HA endpoint comes from /etc/homelab/config.yml (homeassistant_host, host-truth
 # not git — already includes :port), reached over WG through host routing.
 hermes_homeassistant_url: "http://{{ homeassistant_host }}"
+
+hermes_dashboard_user: "admin"
 
 # Bind-mounted to /opt/data (Hermes' data + config dir). Node-based image runs
 # as uid 1000 — pre-own so first boot can't leave config root-owned.

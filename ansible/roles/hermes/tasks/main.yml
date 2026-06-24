@@ -21,13 +21,24 @@
     mode: "0600"
   notify: Swap hermes service
 
-- name: Template Hermes config
+# Hermes rewrites config.yaml on every start, expanding it to its full schema
+# (_config_version, all defaults merged). Templating it each converge would
+# diff against that expanded file and churn-restart the container forever, so
+# seed it ONCE; Hermes owns it afterwards. Change config via the dashboard or
+# edit the file on-host (or delete it to re-seed from this template).
+- name: Check for existing Hermes config
+  ansible.builtin.stat:
+    path: "{{ hermes_data_dir }}/config.yaml"
+  register: hermes_config_stat
+
+- name: Seed Hermes config (first converge only)
   ansible.builtin.template:
     src: config.yaml.j2
     dest: "{{ hermes_data_dir }}/config.yaml"
     owner: "{{ hermes_data_uid }}"
     group: "{{ hermes_data_uid }}"
-    mode: "0644"
+    mode: "0640"
+  when: not hermes_config_stat.stat.exists
   notify: Swap hermes service
 
 - name: Template Hermes runtime secrets (.env)

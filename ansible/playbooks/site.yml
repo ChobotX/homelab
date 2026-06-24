@@ -81,6 +81,11 @@
       - mistral_api_key
       - hermes_discord_token
       - homeassistant_hermes_token
+      # Hermes dashboard basic-auth — plaintext (for the human login) + scrypt
+      # hash (consumed by config.yaml). Minted once on-host; Hermes won't bind
+      # the dashboard to 0.0.0.0 without an auth provider configured.
+      - hermes_dashboard_password
+      - hermes_dashboard_password_hash
 
   # pre_tasks are tagged `always` so they fire even with --tags <role>.
   pre_tasks:

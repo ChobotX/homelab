@@ -12,7 +12,7 @@
 # The agent runs its shell INSIDE this container (terminal.backend: local).
 #
 # Ingress: Traefik joins the `hermes` net (it is the cross-network member) and
-# routes hermes.<domain> → :8642, wg-only. Hermes stays off `proxy` on purpose.
+# routes hermes.<domain> → :9119, wg-only. Hermes stays off `proxy` on purpose.
 services:
   hermes:
     image: ${HERMES_IMAGE}
@@ -33,12 +33,12 @@ services:
     networks:
       - observability
       - hermes
-    pids_limit: 512
     deploy:
       resources:
         limits:
           memory: 4G
           cpus: "2.0"
+          pids: 512
     healthcheck:
       # Node-based image (bundles Node ≥18 global fetch). Any HTTP response on
       # the dashboard/API port = process is up; only a connection failure is
@@ -46,7 +46,7 @@ services:
       test:
         - CMD-SHELL
         - >-
-          node -e "fetch('http://127.0.0.1:8642/').then(()=>process.exit(0)).catch(()=>process.exit(1))"
+          node -e "fetch('http://127.0.0.1:9119/').then(()=>process.exit(0)).catch(()=>process.exit(1))"
       interval: 30s
       timeout: 5s
       retries: 3
@@ -61,7 +61,7 @@ services:
       traefik.http.routers.hermes.tls.certresolver: "cloudflare"
       traefik.http.routers.hermes.service: "hermes"
       traefik.http.routers.hermes.middlewares: "wg-only@file,security-headers@file"
-      traefik.http.services.hermes.loadbalancer.server.port: "8642"
+      traefik.http.services.hermes.loadbalancer.server.port: "9119"
 
 networks:
   observability:

@@ -38,3 +38,14 @@ discord:
   require_mention: true
   auto_thread: true
   reactions: true
+
+# Hermes refuses to bind the dashboard on a non-loopback address without its
+# own auth provider (the bind is 0.0.0.0 so Traefik can reach it across the
+# hermes net). Basic-auth hash is minted once on-host and slurped; the
+# plaintext lives in /etc/homelab/secrets/hermes_dashboard_password. WG-only
+# at the Traefik edge remains the outer moat. The scrypt hash has no ${...}
+# refs so Hermes' env substitution leaves it intact.
+dashboard:
+  basic_auth:
+    username: "{{ hermes_dashboard_user }}"
+    password_hash: "{{ hermes_dashboard_password_hash }}"
