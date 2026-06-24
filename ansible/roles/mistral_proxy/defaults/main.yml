@@ -1,0 +1,27 @@
+---
+# Mistral rate-limit shim — an nginx reverse proxy in front of api.mistral.ai.
+#
+# WHY: the Mistral tier caps requests at 4/min (x-ratelimit-limit-req-minute)
+# and sends NO Retry-After header on 429. Hermes' retry path therefore falls
+# back to a hardcoded 2/4/8s burst that just re-hits the same per-minute wall.
+# This proxy paces requests to the cap (nginx limit_req) and, when over budget,
+# returns 429 + Retry-After — which Hermes' supported retry path honours.
+#
+# Internal only: lives on the `hermes` net, no Traefik ingress. When Hermes
+# moves to a local LLM, point hermes_llm_base_url back at the provider and drop
+# this role; nothing else changes.
+mistral_proxy_image: "nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"
+
+# Mistral upstream (TLS). Resolved at runtime via docker DNS so an upstream IP
+# change doesn't need a proxy reload.
+mistral_proxy_upstream_host: "api.mistral.ai"
+
+# Requests/minute let through — matches the account's
+# x-ratelimit-limit-req-minute. Bump this when the Mistral tier is raised.
+mistral_proxy_rate_per_min: 4
+# Burst so a quick tool-call sequence isn't throttled on the first extra
+# request; anything beyond gets 429 + Retry-After.
+mistral_proxy_burst: 2
+# Retry-After (seconds) on 429. rate=4/min ≈ one slot per 15s; 20s gives the
+# leaky bucket margin to refill. Hermes caps Retry-After at 120s.
+mistral_proxy_retry_after: 20

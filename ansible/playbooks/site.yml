@@ -30,6 +30,7 @@
 #   n8n            → workflow automation / webhook hub behind Traefik (WG-only)
 #   trilium        → notes (TriliumNext, SQLite) + ETAPI behind Traefik (WG-only)
 #   ollama         → local LLM inference (GPU), backend-only on proxy network
+#   mistral_proxy  → nginx rate-limit shim before hermes (paces Mistral 4 rpm)
 #   hermes         → autonomous AI agent, sandboxed (no docker.sock/host FS),
 #                    Discord + dashboard, scoped to loki/prom/trilium/HA
 #   homepage       → signpost page at home.<homelab_domain> (links + live widgets)
@@ -210,6 +211,11 @@
     - role: ollama
       tags: [ollama, ai, services]
       when: nvidia_gpu_enabled | default(false) | bool
+    # Mistral rate-limit shim — nginx proxy that paces Hermes' LLM calls to the
+    # 4 req/min Mistral cap (+ Retry-After). Internal-only on the hermes net;
+    # runs before hermes so the agent's base_url resolves on first start.
+    - role: mistral_proxy
+      tags: [mistral_proxy, hermes, ai, services]
     # Autonomous AI agent — runs AFTER trilium/observability/traefik so its
     # scoped targets (trilium ETAPI, loki/prometheus, the hermes net + Traefik
     # ingress) already exist. Sandboxed: no docker.sock, no host FS, off proxy.

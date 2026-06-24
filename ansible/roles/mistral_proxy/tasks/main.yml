@@ -1,0 +1,39 @@
+---
+- name: Ensure /opt/mistral-proxy layout
+  ansible.builtin.file:
+    path: /opt/mistral-proxy
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Template nginx.conf
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /opt/mistral-proxy/nginx.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap mistral-proxy service
+
+- name: Template docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: /opt/mistral-proxy/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap mistral-proxy service
+
+# Flush before the safety-net up-task so a config change recreates the
+# container via --force-recreate (compose sees no service-spec diff for a
+# bind-mounted nginx.conf change otherwise). Same rationale as the ollama role.
+- name: Apply any pending service swap before bring-up
+  ansible.builtin.meta: flush_handlers
+
+- name: Bring up mistral-proxy stack
+  community.docker.docker_compose_v2:
+    project_src: /opt/mistral-proxy
+    state: present
+    pull: policy
+    recreate: never

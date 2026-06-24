@@ -1,0 +1,8 @@
+---
+- name: Swap mistral-proxy service
+  ansible.builtin.command:
+    chdir: /opt/mistral-proxy
+    # --force-recreate so bind-mounted nginx.conf/compose changes actually
+    # trigger a restart (compose sees no service-spec diff otherwise).
+    cmd: docker compose up -d --wait --no-deps --force-recreate mistral-proxy
+  changed_when: true

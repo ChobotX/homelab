@@ -1,0 +1,65 @@
+# Managed by Ansible — rate-limit shim in front of {{ mistral_proxy_upstream_host }}.
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+  worker_connections 256;
+}
+
+http {
+  access_log off;
+
+  # One global leaky bucket (all traffic is from the single hermes container).
+  # rate caps requests/min to the Mistral tier; burst absorbs short tool-call
+  # sequences. 1m zone holds ~16k states — far more than one client needs.
+  limit_req_zone $binary_remote_addr zone=mistral:1m rate={{ mistral_proxy_rate_per_min }}r/m;
+
+  # Docker embedded DNS — resolve the upstream name at runtime.
+  resolver 127.0.0.11 ipv6=off valid=30s;
+
+  # Long prompts / tool results.
+  client_max_body_size 25m;
+
+  server {
+    listen 80;
+
+    location = /healthz {
+      access_log off;
+      return 200 "ok\n";
+    }
+
+    location / {
+      limit_req zone=mistral burst={{ mistral_proxy_burst }} nodelay;
+      limit_req_status 429;
+      # Catch both nginx's own 429 (limit_req) and a real upstream 429 so each
+      # carries a Retry-After Hermes can honour.
+      proxy_intercept_errors on;
+      error_page 429 = @ratelimited;
+
+      set $upstream {{ mistral_proxy_upstream_host }};
+      proxy_pass https://$upstream$request_uri;
+      proxy_http_version 1.1;
+      proxy_set_header Host {{ mistral_proxy_upstream_host }};
+      proxy_set_header Connection "";
+
+      # Verify the upstream cert against the host CA bundle (bind-mounted in
+      # compose — nginx:alpine ships no ca-certificates).
+      proxy_ssl_server_name on;
+      proxy_ssl_name {{ mistral_proxy_upstream_host }};
+      proxy_ssl_verify on;
+      proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+      proxy_ssl_protocols TLSv1.2 TLSv1.3;
+
+      proxy_connect_timeout 10s;
+      proxy_read_timeout 300s;
+      proxy_send_timeout 60s;
+    }
+
+    location @ratelimited {
+      default_type application/json;
+      add_header Retry-After {{ mistral_proxy_retry_after }} always;
+      return 429 '{"error":{"message":"rate limited by mistral-proxy","type":"rate_limit_error"}}';
+    }
+  }
+}

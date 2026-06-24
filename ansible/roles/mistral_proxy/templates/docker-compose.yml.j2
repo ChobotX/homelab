@@ -1,0 +1,33 @@
+---
+# Mistral rate-limit proxy — internal only (hermes net), no Traefik ingress.
+# Hermes reaches it by DNS name `mistral-proxy` (model.base_url).
+services:
+  mistral-proxy:
+    image: {{ mistral_proxy_image }}
+    container_name: mistral-proxy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # Host CA bundle so proxy_ssl_verify can validate api.mistral.ai
+      # (nginx:alpine ships no ca-certificates package).
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+    networks:
+      - hermes
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+          pids: 128
+
+networks:
+  hermes:
+    external: true

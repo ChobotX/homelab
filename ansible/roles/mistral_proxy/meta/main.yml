@@ -1,0 +1,13 @@
+---
+# No role dependency: the `hermes` docker network is created by the docker role
+# (run earlier in site.yml), and this proxy carries no secrets of its own.
+dependencies: []
+galaxy_info:
+  role_name: mistral_proxy
+  author: homelab-admin
+  description: nginx rate-limit shim in front of the Mistral API for Hermes
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]
