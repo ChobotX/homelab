@@ -14,6 +14,10 @@ DISCORD_ALLOWED_CHANNELS={{ hermes_discord_allowed_channels }}
 # Web dashboard (reached only via Traefik wg-only on hermes.<domain>).
 HERMES_DASHBOARD=1
 
+# Prepend the bind-mounted agent bin dir (jq + any tools the agent installs
+# there) to PATH. Strict superset of the image PATH — nothing standard removed.
+PATH=/opt/data/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 # Scoped service access for the agent's shell.
 LOKI_URL={{ hermes_loki_url }}
 PROMETHEUS_URL={{ hermes_prometheus_url }}

@@ -33,6 +33,13 @@ hermes_homeassistant_url: "http://{{ homeassistant_host }}"
 
 hermes_dashboard_user: "admin"
 
+# Agent shell tools. The image ships rg/curl/git/node/python3 but not jq.
+# jq is dropped into the bind-mounted data/bin (persists recreate); that dir is
+# prepended to the container PATH (data-env.j2) so it — and any tools the agent
+# installs there itself — resolve ahead of the image binaries. Host is amd64.
+hermes_jq_version: "1.7.1"
+hermes_jq_sha256: "5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5"
+
 # Bind-mounted to /opt/data (Hermes' data + config dir). Node-based image runs
 # as uid 1000 — pre-own so first boot can't leave config root-owned.
 hermes_data_dir: /opt/hermes/data

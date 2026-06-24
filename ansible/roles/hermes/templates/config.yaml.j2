@@ -39,6 +39,19 @@ discord:
   auto_thread: true
   reactions: true
 
+# Home Assistant via its native MCP Server integration (SSE endpoint). The
+# bearer reuses HOMEASSISTANT_TOKEN from .env (no duplicate secret); Hermes
+# substitutes ${...} at config load. HA is reached over WG through host routing
+# — the "Model Context Protocol Server" integration must be enabled HA-side.
+mcp_servers:
+  homeassistant:
+    url: "{{ hermes_homeassistant_url }}/mcp_server/sse"
+    # HA's MCP Server speaks the SSE protocol, not Streamable HTTP (the default)
+    # — without this the probe POSTs and HA answers 405 Method Not Allowed.
+    transport: sse
+    headers:
+      Authorization: "Bearer ${HOMEASSISTANT_TOKEN}"
+
 # Hermes refuses to bind the dashboard on a non-loopback address without its
 # own auth provider (the bind is 0.0.0.0 so Traefik can reach it across the
 # hermes net). Basic-auth hash is minted once on-host and slurped; the

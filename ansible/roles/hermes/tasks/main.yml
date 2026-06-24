@@ -12,6 +12,26 @@
     # Pre-own to the node uid so a first-boot race can't leave config root-owned.
     - { path: "{{ hermes_data_dir }}", owner: "{{ hermes_data_uid }}" }
 
+- name: Ensure agent bin dir (bind-mounted, prepended to PATH via .env)
+  ansible.builtin.file:
+    path: "{{ hermes_data_dir }}/bin"
+    state: directory
+    owner: "{{ hermes_data_uid }}"
+    group: "{{ hermes_data_uid }}"
+    mode: "0755"
+
+# The image ships rg/curl/git/node/python3 but not jq. Drop a pinned static
+# jq into the bind-mounted bin dir (survives recreate); the agent can add more
+# tools there itself. get_url short-circuits on the sha256 match.
+- name: Install jq into agent bin
+  ansible.builtin.get_url:
+    url: "https://github.com/jqlang/jq/releases/download/jq-{{ hermes_jq_version }}/jq-linux-amd64"
+    dest: "{{ hermes_data_dir }}/bin/jq"
+    checksum: "sha256:{{ hermes_jq_sha256 }}"
+    owner: "{{ hermes_data_uid }}"
+    group: "{{ hermes_data_uid }}"
+    mode: "0755"
+
 - name: Template compose-interpolation .env
   ansible.builtin.template:
     src: env.j2
