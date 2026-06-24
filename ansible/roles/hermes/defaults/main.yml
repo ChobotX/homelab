@@ -12,11 +12,11 @@ hermes_image: "nousresearch/hermes-agent:latest@sha256:39ce97f831e423408d85ccf7a
 
 hermes_host: "hermes.{{ homelab_domain }}"
 
-# LLM: Mistral Large via the custom OpenAI-compatible provider path. Routed
+# LLM: Mistral Medium 3.5 via the custom OpenAI-compatible provider path. Routed
 # through the mistral_proxy rate-limit shim (paces to Mistral's 4 req/min cap
 # and emits Retry-After), not straight at api.mistral.ai. Swapping to a local
 # model later = change base_url + model, nothing structural.
-hermes_model: "mistral-large-latest"
+hermes_model: "mistral-medium-latest"
 hermes_llm_base_url: "http://mistral-proxy/v1"
 
 # Autonomous-run circuit breaker — cap iterations per conversation so a
