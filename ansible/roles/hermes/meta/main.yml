@@ -1,0 +1,12 @@
+---
+dependencies:
+  - role: traefik
+galaxy_info:
+  role_name: hermes
+  author: homelab-admin
+  description: Hermes Agent (Nous Research) — autonomous sandboxed AI agent
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [noble]

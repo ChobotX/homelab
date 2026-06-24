@@ -1,0 +1,44 @@
+---
+# Hermes Agent (Nous Research) — autonomous self-hosted agent, sandboxed.
+#
+# Fully autonomous (approvals.mode: off — no command prompts). That is SAFE
+# only because the container is the jail: no docker.sock, no host bind-mounts
+# beyond /opt/hermes/data, and the agent's network reach is scoped to the
+# observability + hermes docker nets (+ Home Assistant over WG). It physically
+# cannot stop/delete other services or touch the host. See tasks + compose.
+#
+# Pinned by tag + digest; pull is by digest so the tag is cosmetic.
+hermes_image: "nousresearch/hermes-agent:latest@sha256:802e8bd92217a7594038335813f93f1f6e9362975aed0593d2dd8568ceda5807"
+
+hermes_host: "hermes.{{ homelab_domain }}"
+
+# LLM: Mistral Large via the custom OpenAI-compatible provider path. Swapping
+# to a local model later = change base_url + model, nothing structural.
+hermes_model: "mistral-large-latest"
+hermes_llm_base_url: "https://api.mistral.ai/v1"
+
+# Autonomous-run circuit breaker — cap iterations per conversation so a
+# runaway tool loop can't burn the Mistral budget unbounded.
+hermes_max_turns: 90
+
+# Service endpoints the agent reaches. Loki/Prometheus by DNS over the
+# observability net; Trilium by DNS over the hermes net; Home Assistant by its
+# WG IP (reached through host routing — HA is not a docker container here).
+hermes_loki_url: "http://loki:3100"
+hermes_prometheus_url: "http://prometheus:9090"
+hermes_trilium_url: "http://trilium:8080"
+# HA endpoint comes from /etc/homelab/config.yml (homeassistant_host, host-truth
+# not git — already includes :port), reached over WG through host routing.
+hermes_homeassistant_url: "http://{{ homeassistant_host }}"
+
+# Bind-mounted to /opt/data (Hermes' data + config dir). Node-based image runs
+# as uid 1000 — pre-own so first boot can't leave config root-owned.
+hermes_data_dir: /opt/hermes/data
+hermes_data_uid: "1000"
+
+# Discord allowlist — set per-host in /etc/homelab/config.yml (host-truth, not
+# git), slurped as play vars on every converge. Empty here = fail closed: the
+# gateway denies all Discord users until config.yml provides the IDs.
+# The bot token itself is /etc/homelab/secrets/hermes_discord_token.
+hermes_discord_allowed_users: ""
+hermes_discord_allowed_channels: ""

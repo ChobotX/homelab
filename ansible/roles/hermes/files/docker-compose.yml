@@ -1,0 +1,70 @@
+---
+# Hermes Agent — autonomous self-hosted agent, sandboxed.
+#
+# ISOLATION (this is what makes approvals.mode:off safe):
+#   - NO /var/run/docker.sock  → cannot stop/delete/create other containers
+#   - NO host bind-mounts except ./data → cannot rm /opt/<service> data or
+#     read host files
+#   - networks: observability + hermes ONLY (NOT proxy) → no lateral HTTP
+#     reach to vaultwarden/jellyfin/etc. Reaches loki/prometheus (observability)
+#     and trilium (hermes net); Home Assistant via its WG IP through host routing.
+#   - no-new-privileges + pids/mem/cpu caps → blast radius bounded to the container.
+# The agent runs its shell INSIDE this container (terminal.backend: local).
+#
+# Ingress: Traefik joins the `hermes` net (it is the cross-network member) and
+# routes hermes.<domain> → :8642, wg-only. Hermes stays off `proxy` on purpose.
+services:
+  hermes:
+    image: ${HERMES_IMAGE}
+    container_name: hermes
+    restart: unless-stopped
+    command: gateway run
+    stop_grace_period: 20s
+    # NOTE: no `cap_drop: ALL`. The image uses s6-overlay, whose init needs
+    # SETUID/SETGID/CHOWN to drop to its runtime user (same constraint as the
+    # tdarr/trilium roles). no-new-privileges is kept; the real boundary is the
+    # missing docker.sock + host FS + scoped network, not capabilities.
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - ./data/.env
+    volumes:
+      - ./data:/opt/data
+    networks:
+      - observability
+      - hermes
+    pids_limit: 512
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+    healthcheck:
+      # Node-based image (bundles Node ≥18 global fetch). Any HTTP response on
+      # the dashboard/API port = process is up; only a connection failure is
+      # unhealthy (the dashboard may answer 401/redirect, which is still "up").
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:8642/').then(()=>process.exit(0)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "hermes"
+
+      traefik.http.routers.hermes.rule: "Host(`${HERMES_HOST}`)"
+      traefik.http.routers.hermes.entrypoints: "websecure"
+      traefik.http.routers.hermes.tls: "true"
+      traefik.http.routers.hermes.tls.certresolver: "cloudflare"
+      traefik.http.routers.hermes.service: "hermes"
+      traefik.http.routers.hermes.middlewares: "wg-only@file,security-headers@file"
+      traefik.http.services.hermes.loadbalancer.server.port: "8642"
+
+networks:
+  observability:
+    external: true
+  hermes:
+    external: true

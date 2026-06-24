@@ -36,7 +36,7 @@ out() {
   printf '  %-18s %s\n' "$1" "$2" >&2
 }
 
-BUCKETS=(shared common qos wireguard ufw ssh fail2ban storage docker nvidia_container observability traefik vaultwarden jellyfin tdarr syncthing gluetun qbittorrent prowlarr flaresolverr sonarr radarr bazarr n8n trilium ollama homepage backup)
+BUCKETS=(shared common qos wireguard ufw ssh fail2ban storage docker nvidia_container observability traefik vaultwarden jellyfin tdarr syncthing gluetun qbittorrent prowlarr flaresolverr sonarr radarr bazarr n8n trilium ollama hermes homepage backup)
 
 force_full() {
   local reason="$1"
@@ -97,6 +97,7 @@ bazarr=false
 n8n=false
 trilium=false
 ollama=false
+hermes=false
 hp=false
 backup=false
 
@@ -137,6 +138,7 @@ while IFS= read -r f; do
     ansible/roles/n8n/*)           n8n=true ;;
     ansible/roles/trilium/*)       trilium=true ;;
     ansible/roles/ollama/*)        ollama=true ;;
+    ansible/roles/hermes/*)        hermes=true ;;
     ansible/roles/homepage/*)      hp=true ;;
     ansible/roles/backup/*)        backup=true ;;
   esac
@@ -153,7 +155,7 @@ done <<< "$files"
 if [ "$shared" = true ]; then
   common=true; qos=true; wg=true; ufw=true; ssh=true; f2b=true; storage=true; docker=true
   nvidia_container=true
-  obs=true; traefik=true; vw=true; jellyfin=true; tdarr=true; syncthing=true; n8n=true; trilium=true; ollama=true; hp=true; backup=true
+  obs=true; traefik=true; vw=true; jellyfin=true; tdarr=true; syncthing=true; n8n=true; trilium=true; ollama=true; hermes=true; hp=true; backup=true
   gluetun=true; qbittorrent=true; prowlarr=true; flaresolverr=true; sonarr=true; radarr=true; bazarr=true
 fi
 
@@ -201,5 +203,6 @@ out bazarr "$bazarr"
 out n8n "$n8n"
 out trilium "$trilium"
 out ollama "$ollama"
+out hermes "$hermes"
 out homepage "$hp"
 out backup "$backup"

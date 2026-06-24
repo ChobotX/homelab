@@ -33,6 +33,9 @@ services:
       - proxy
       - observability
       - arr
+      # Ingress for the Hermes dashboard — Hermes stays off `proxy`, so Traefik
+      # (the cross-network member) joins `hermes` to route hermes.<domain>.
+      - hermes
     labels:
       traefik.enable: "true"
       # Dashboard router (HTTPS only, behind basic auth).
@@ -49,4 +52,6 @@ networks:
   observability:
     external: true
   arr:
+    external: true
+  hermes:
     external: true

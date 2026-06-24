@@ -240,6 +240,7 @@ jobs:
       n8n: ${{ steps.detect.outputs.n8n }}
       trilium: ${{ steps.detect.outputs.trilium }}
       ollama: ${{ steps.detect.outputs.ollama }}
+      hermes: ${{ steps.detect.outputs.hermes }}
       homepage: ${{ steps.detect.outputs.homepage }}
       backup: ${{ steps.detect.outputs.backup }}
     steps:
@@ -755,6 +756,27 @@ jobs:
         with:
           tags: ollama
 
+  deploy-hermes:
+    # Autonomous AI agent. Needs docker (hermes + observability nets) + ufw,
+    # and traefik — Traefik must have joined the `hermes` net before the
+    # dashboard route resolves. traefik also comes in via role meta.
+    name: deploy (hermes)
+    needs: [deploy-docker, deploy-ufw, deploy-traefik, changes]
+    if: >-
+      !failure() && !cancelled()
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || github.event_name == 'schedule')
+      && needs.changes.outputs.hermes == 'true'
+    runs-on: [self-hosted, linux, homelab]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/deploy-tags
+        with:
+          tags: hermes
+
   deploy-homepage:
     name: deploy (homepage)
     needs: [deploy-docker, deploy-ufw, changes]
@@ -779,7 +801,7 @@ jobs:
     # backup proceed even when some apps were skipped by the change gate —
     # `needs:` default would cascade-skip it otherwise. Gated on
     # changes.backup; weekly schedule force-fulls to heal drift.
-    needs: [deploy-qos, deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-tdarr, deploy-syncthing, deploy-gluetun, deploy-qbittorrent, deploy-prowlarr, deploy-flaresolverr, deploy-sonarr, deploy-radarr, deploy-bazarr, deploy-n8n, deploy-trilium, deploy-ollama, deploy-nvidia-container, deploy-homepage, changes]
+    needs: [deploy-qos, deploy-observability, deploy-traefik, deploy-vaultwarden, deploy-jellyfin, deploy-tdarr, deploy-syncthing, deploy-gluetun, deploy-qbittorrent, deploy-prowlarr, deploy-flaresolverr, deploy-sonarr, deploy-radarr, deploy-bazarr, deploy-n8n, deploy-trilium, deploy-ollama, deploy-hermes, deploy-nvidia-container, deploy-homepage, changes]
     if: >-
       !failure() && !cancelled()
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')

@@ -198,6 +198,15 @@
     name: proxy
     state: present
 
+# Scoped to the Hermes agent + the services it may reach by DNS (Trilium joins
+# it; Traefik joins it for ingress). Keeping Hermes on `hermes` + `observability`
+# instead of `proxy` denies the autonomous agent lateral HTTP reach to
+# vaultwarden/jellyfin/etc.
+- name: Create shared hermes docker network
+  community.docker.docker_network:
+    name: hermes
+    state: present
+
 - name: Create shared arr docker network
   # Subnet pinned so gluetun's FIREWALL_OUTBOUND_SUBNETS can reference a
   # stable CIDR. Without a pin, Docker auto-allocates from its bridge pool

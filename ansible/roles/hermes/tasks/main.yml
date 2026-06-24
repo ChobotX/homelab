@@ -1,0 +1,59 @@
+---
+- name: Ensure /opt/hermes layout
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+    mode: "0755"
+  loop:
+    - { path: /opt/hermes, owner: root }
+    # Bind-mounted to /opt/data (config.yaml, .env, memory, skills, sessions).
+    # Pre-own to the node uid so a first-boot race can't leave config root-owned.
+    - { path: "{{ hermes_data_dir }}", owner: "{{ hermes_data_uid }}" }
+
+- name: Template compose-interpolation .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/hermes/.env
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Swap hermes service
+
+- name: Template Hermes config
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ hermes_data_dir }}/config.yaml"
+    owner: "{{ hermes_data_uid }}"
+    group: "{{ hermes_data_uid }}"
+    mode: "0644"
+  notify: Swap hermes service
+
+- name: Template Hermes runtime secrets (.env)
+  ansible.builtin.template:
+    src: data-env.j2
+    dest: "{{ hermes_data_dir }}/.env"
+    owner: "{{ hermes_data_uid }}"
+    group: "{{ hermes_data_uid }}"
+    mode: "0600"
+  no_log: true
+  notify: Swap hermes service
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/hermes/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Swap hermes service
+
+- name: Bring up hermes stack
+  # First-deploy safety net. `recreate: never` leaves a running container
+  # untouched on compose/image changes so the handler owns every swap.
+  community.docker.docker_compose_v2:
+    project_src: /opt/hermes
+    state: present
+    pull: policy
+    recreate: never

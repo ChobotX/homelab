@@ -1,0 +1,40 @@
+# Managed by Ansible — Hermes Agent config (mounted at /opt/data/config.yaml).
+# Secrets are NOT here: ${...} refs resolve from /opt/data/.env (templated
+# separately at mode 0600). Non-secret structured settings only.
+
+model:
+  default: "{{ hermes_model }}"
+  provider: custom
+  base_url: "{{ hermes_llm_base_url }}"
+  api_key: "${MISTRAL_API_KEY}"
+
+# Fully autonomous: NO approval prompts. This is acceptable ONLY because the
+# container is the security boundary (no docker.sock, no host FS beyond
+# /opt/data, scoped docker nets). The agent can do anything inside the
+# container; it cannot escape to delete other services or touch the host.
+approvals:
+  mode: "off"
+
+terminal:
+  backend: local
+  timeout: 180
+  # Surface service endpoints + tokens to the agent's shell so it can curl
+  # Loki / Prometheus / Home Assistant / Trilium. Hermes strips other
+  # sensitive env from child processes by default.
+  env_passthrough:
+    - LOKI_URL
+    - PROMETHEUS_URL
+    - HOMEASSISTANT_URL
+    - HOMEASSISTANT_TOKEN
+    - TRILIUM_URL
+    - TRILIUM_TOKEN
+
+# Iteration budget — runaway-loop circuit breaker for unattended operation.
+agent:
+  max_turns: {{ hermes_max_turns }}
+  api_max_retries: 3
+
+discord:
+  require_mention: true
+  auto_thread: true
+  reactions: true

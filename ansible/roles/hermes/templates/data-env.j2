@@ -1,0 +1,25 @@
+# Managed by Ansible — mode 0600. Hermes runtime secrets + service endpoints.
+# Mounted at /opt/data/.env: Hermes loads it for ${...} substitution, and the
+# container also pulls it via compose env_file so DISCORD_*/HERMES_* land in
+# the process env. Missing secrets render empty (site.yml defaults them) — the
+# gateway then denies all Discord users / fails LLM auth until the file is
+# populated, which is the intended fail-closed behaviour.
+
+MISTRAL_API_KEY={{ mistral_api_key }}
+
+DISCORD_BOT_TOKEN={{ hermes_discord_token }}
+DISCORD_ALLOWED_USERS={{ hermes_discord_allowed_users }}
+DISCORD_ALLOWED_CHANNELS={{ hermes_discord_allowed_channels }}
+
+# Web dashboard (reached only via Traefik wg-only on hermes.<domain>).
+HERMES_DASHBOARD=1
+
+# Scoped service access for the agent's shell.
+LOKI_URL={{ hermes_loki_url }}
+PROMETHEUS_URL={{ hermes_prometheus_url }}
+HOMEASSISTANT_URL={{ hermes_homeassistant_url }}
+HOMEASSISTANT_TOKEN={{ homeassistant_hermes_token }}
+TRILIUM_URL={{ hermes_trilium_url }}
+TRILIUM_TOKEN={{ trilium_etapi_token }}
+
+TZ={{ timezone }}

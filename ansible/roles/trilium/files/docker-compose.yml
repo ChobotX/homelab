@@ -31,6 +31,9 @@ services:
       TRILIUM_NETWORK_PORT: "8080"
     networks:
       - proxy
+      # Reachable by the Hermes agent (ETAPI notes access) over the hermes net,
+      # without exposing Trilium to anything else on it.
+      - hermes
     volumes:
       # Literal host path (NOT an env var): TRILIUM_DATA_DIR is a reserved
       # Trilium setting — if it reached the container via env_file, Trilium
@@ -69,4 +72,6 @@ services:
 
 networks:
   proxy:
+    external: true
+  hermes:
     external: true
