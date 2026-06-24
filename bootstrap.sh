@@ -145,7 +145,13 @@ valid_email      "$ALERTMANAGER_EMAIL_TO"          || die "ALERTMANAGER_EMAIL_TO
 : "${UPTIME_ICMP_TARGET:=}"
 
 # Runner defaults — derived, not user-facing.
-: "${GITHUB_RUNNER_VERSION:=2.333.1}"
+# Keep current: GitHub deprecates old runner versions and refuses their
+# connections ("version vX is deprecated and cannot receive messages"), which
+# silently fills the runner group with dead offline registrations. Bump when
+# actions/runner cuts a release. NOTE: the install loop below only extracts
+# into dirs missing run.sh — upgrading existing installs needs a re-extract
+# (scale-runners.sh / manual tar over the dirs).
+: "${GITHUB_RUNNER_VERSION:=2.335.1}"
 : "${GITHUB_RUNNER_USER:=gha-runner}"
 : "${GITHUB_RUNNER_LABELS:=self-hosted,linux,homelab}"
 : "${GITHUB_RUNNER_DIR:=/opt/actions-runner}"
