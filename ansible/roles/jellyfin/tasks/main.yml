@@ -35,28 +35,18 @@
     - music
     - incoming
 
-- name: Probe for Intel QuickSync VA-API device
-  # Presence of /dev/dri/renderD128 IS the truth — same posture as
-  # nvidia_smi_stat in site.yml. HW transcoding path is gated on this.
+- name: Probe for NVIDIA GPU
+  # Presence of nvidia-smi IS the truth — same posture as nvidia_smi_stat in
+  # site.yml. The GPU is a Quadro P2000; HW transcoding rides NVENC/NVDEC via
+  # the nvidia container runtime. (renderD128 exists too but it's the NVIDIA
+  # render node — libva has no NVIDIA backend, so VA-API is a dead end here.)
   ansible.builtin.stat:
-    path: /dev/dri/renderD128
-  register: jellyfin_dri_stat
+    path: /usr/bin/nvidia-smi
+  register: jellyfin_nvidia_stat
 
-- name: Read render group GID (when /dev/dri present)
-  # container UID must be in `render` gid to open renderD128. getent reads the
-  # passwd/group database through NSS, not just /etc/group — covers LDAP hosts
-  # even though ours is local-only.
-  ansible.builtin.command: getent group render
-  register: jellyfin_render_group
-  changed_when: false
-  failed_when: false
-  when: jellyfin_dri_stat.stat.exists
-
-- name: Set jellyfin_hw_transcode facts
+- name: Set jellyfin_hw_transcode fact
   ansible.builtin.set_fact:
-    jellyfin_hw_transcode: "{{ jellyfin_dri_stat.stat.exists
-                               and (jellyfin_render_group.rc | default(1)) == 0 }}"
-    jellyfin_render_gid: "{{ (jellyfin_render_group.stdout | default('::0:')).split(':')[2] | default('0') }}"
+    jellyfin_hw_transcode: "{{ jellyfin_nvidia_stat.stat.exists }}"
 
 - name: Template .env
   ansible.builtin.template:

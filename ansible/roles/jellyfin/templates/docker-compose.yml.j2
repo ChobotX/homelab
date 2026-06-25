@@ -29,13 +29,14 @@ services:
       - /tmp
       - /config/transcodes:size=${JELLYFIN_TRANSCODE_TMPFS_SIZE}
 {% if jellyfin_hw_transcode | default(false) | bool %}
-    # Intel QuickSync VA-API. Container user (jellyfin, uid 1000) joins the
-    # host `render` gid to open renderD128. Without this the VA-API probe
-    # inside jellyfin fails and it silently falls back to software transcode.
-    devices:
-      - /dev/dri/renderD128:/dev/dri/renderD128
-    group_add:
-      - "{{ jellyfin_render_gid }}"
+    # NVIDIA NVENC/NVDEC via the nvidia container runtime (Quadro P2000).
+    # Mirrors tdarr. The renderD128 device-map is the Intel VA-API path —
+    # wrong for this GPU; libva has no NVIDIA backend so vaInitialize fails
+    # and jellyfin silently falls back to software transcode.
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
 {% endif %}
     networks:
       - proxy
