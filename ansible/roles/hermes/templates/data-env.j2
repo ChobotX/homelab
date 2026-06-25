@@ -18,6 +18,11 @@ HERMES_DASHBOARD=1
 # there) to PATH. Strict superset of the image PATH — nothing standard removed.
 PATH=/opt/data/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# Vendored `ddgs` (web-search backend) lives here, pip-installed into the
+# bind-mount by the role so it survives container recreate. Hermes imports it
+# in-process; this puts it on the import path without touching site-packages.
+PYTHONPATH=/opt/data/pylib
+
 # Scoped service access for the agent's shell.
 LOKI_URL={{ hermes_loki_url }}
 PROMETHEUS_URL={{ hermes_prometheus_url }}

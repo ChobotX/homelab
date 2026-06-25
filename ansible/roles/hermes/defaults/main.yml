@@ -47,6 +47,16 @@ hermes_dashboard_user: "admin"
 hermes_jq_version: "1.7.1"
 hermes_jq_sha256: "5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5"
 
+# Web search backend = ddgs (DuckDuckGo, no API key, free). Hermes imports the
+# `ddgs` PyPI package in-process; it would otherwise lazy-install into the
+# container's site-packages and lose it on every recreate. Instead we vendor it
+# pip-installed into the bind-mounted data/pylib (survives recreate) and put
+# that on PYTHONPATH (data-env.j2) — same "pin it, persist it" idea as jq above.
+# primp (a ddgs dep) is a compiled wheel, so the install runs INSIDE the
+# container (correct arch/abi), not on the host. Bump = delete data/pylib to
+# force reinstall (mirrors the seed-once config pattern).
+hermes_ddgs_version: "9.14.4"
+
 # Bind-mounted to /opt/data (Hermes' data + config dir). Node-based image runs
 # as uid 1000 — pre-own so first boot can't leave config root-owned.
 hermes_data_dir: /opt/hermes/data

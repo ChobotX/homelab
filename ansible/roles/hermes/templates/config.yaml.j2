@@ -29,6 +29,12 @@ terminal:
     - TRILIUM_URL
     - TRILIUM_TOKEN
 
+# Web search + extract via DDGS (DuckDuckGo) — no API key, free. The `ddgs`
+# Python package is vendored into /opt/data/pylib (PYTHONPATH set in .env);
+# the hermes docker net has internet egress, so queries reach DuckDuckGo.
+web:
+  backend: ddgs
+
 # Iteration budget — runaway-loop circuit breaker for unattended operation.
 agent:
   max_turns: {{ hermes_max_turns }}

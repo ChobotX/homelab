@@ -88,3 +88,25 @@
     state: present
     pull: policy
     recreate: never
+
+# Vendor the ddgs web-search package into the bind-mounted pylib so it survives
+# recreate (PYTHONPATH=/opt/data/pylib in .env makes Hermes import it). primp,
+# a ddgs dep, is a compiled wheel — installing INSIDE the container picks the
+# wheel for the container's arch/abi (a host pip could grab the wrong one).
+# Idempotent: the install is skipped once the package dir exists; to upgrade,
+# delete data/pylib and reconverge (same seed-once spirit as the config above).
+- name: Check for vendored ddgs web-search package
+  ansible.builtin.stat:
+    path: "{{ hermes_data_dir }}/pylib/ddgs"
+  register: hermes_ddgs_stat
+
+- name: Vendor ddgs into the bind-mounted pylib
+  community.docker.docker_container_exec:
+    container: hermes
+    # Run as the node uid so the files land owned by 1000 (the dir is its own).
+    user: "{{ hermes_data_uid }}"
+    command: >-
+      python3 -m pip install --no-cache-dir --disable-pip-version-check
+      --target /opt/data/pylib ddgs=={{ hermes_ddgs_version }}
+  when: not hermes_ddgs_stat.stat.exists
+  notify: Swap hermes service
