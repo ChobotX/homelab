@@ -87,6 +87,10 @@
       # the dashboard to 0.0.0.0 without an auth provider configured.
       - hermes_dashboard_password
       - hermes_dashboard_password_hash
+      # Tavily API key — Hermes' web *extract* backend (search stays on free
+      # ddgs). Installed on-host out of band; missing → renders empty and
+      # Tavily extract fails, but ddgs search keeps working.
+      - hermes_tavily_key
 
   # pre_tasks are tagged `always` so they fire even with --tags <role>.
   pre_tasks:
