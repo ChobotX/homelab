@@ -105,8 +105,19 @@
     container: hermes
     # Run as the node uid so the files land owned by 1000 (the dir is its own).
     user: "{{ hermes_data_uid }}"
-    command: >-
-      python3 -m pip install --no-cache-dir --disable-pip-version-check
-      --target /opt/data/pylib ddgs=={{ hermes_ddgs_version }}
+    # The image ships python3 + curl but NOT pip. Bootstrap pip from the
+    # self-contained get-pip.py into an ephemeral /tmp dir, then use it to
+    # install ddgs into the persistent bind-mount. --target keeps the install
+    # local (no system site-packages write, sidesteps PEP-668). primp/lxml are
+    # compiled wheels — running here picks the container's arch/abi.
+    argv:
+      - /bin/sh
+      - -c
+      - >-
+        curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py &&
+        python3 /tmp/get-pip.py --quiet --no-cache-dir --target /tmp/pipboot &&
+        PYTHONPATH=/tmp/pipboot python3 -m pip install --no-cache-dir
+        --disable-pip-version-check --target /opt/data/pylib
+        ddgs=={{ hermes_ddgs_version }}
   when: not hermes_ddgs_stat.stat.exists
   notify: Swap hermes service
