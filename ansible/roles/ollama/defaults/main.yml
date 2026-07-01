@@ -30,6 +30,7 @@ ollama_models:
   - gemma3:4b-it-qat                      # fast fallback — 3 GiB, ~27 tok/s
   - hollis9/czellama3                     # 4.7 GiB — Llama 3 CZ fine-tune
   - jobautomation/OpenEuroLLM-Czech       # 8.1 GiB — Gemma 3 CZ (EU consortium); CPU-offload on P2000
+  - hf.co/bartowski/nvidia_Orchestrator-8B-GGUF:Q3_K_M  # tiered-orch router (Qwen3-8B based); 4.1 GiB, fits P2000 5G
 
 # Keep the last-loaded model resident instead of unloading after 5min idle.
 # Avoids cold-start latency on sporadic n8n webhook traffic — 4b weights

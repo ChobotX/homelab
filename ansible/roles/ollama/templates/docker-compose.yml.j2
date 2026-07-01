@@ -1,8 +1,8 @@
 ---
 # Ollama — local LLM inference.
-# Backend-only on the `proxy` network — no Traefik router, no host ports.
-# Other containers reach it via DNS name `ollama:11434`. Adding a UI (e.g.
-# OpenWebUI) later means adding Traefik labels + wg-only@file gate then.
+# On the `proxy` network — no host ports. In-cluster containers reach it via
+# DNS name `ollama:11434`; external access (the pi orchestrator harness on the
+# Mac, over WG) goes through Traefik at `{{ ollama_host }}`, gated wg-only@file.
 services:
   ollama:
     image: ${OLLAMA_IMAGE}
@@ -44,6 +44,20 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    labels:
+      # Traefik-fronted so the pi orchestrator harness (Mac, over WG) can reach
+      # the inference API — the homelab way: no host ports, wg-only@file gate.
+      # WG is the moat; ollama has no auth of its own, so no dashboard-auth here.
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+
+      traefik.http.routers.ollama.rule: "Host(`{{ ollama_host }}`)"
+      traefik.http.routers.ollama.entrypoints: "websecure"
+      traefik.http.routers.ollama.tls: "true"
+      traefik.http.routers.ollama.tls.certresolver: "cloudflare"
+      traefik.http.routers.ollama.service: "ollama"
+      traefik.http.routers.ollama.middlewares: "wg-only@file,security-headers@file"
+      traefik.http.services.ollama.loadbalancer.server.port: "11434"
 
 networks:
   proxy:
