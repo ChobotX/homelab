@@ -1,4 +1,10 @@
 ---
+- name: Tear down Radarr stack (disabled)
+  community.docker.docker_compose_v2:
+    project_src: /opt/radarr
+    state: absent
+  when: not (radarr_enabled | bool)
+
 - name: Ensure /opt/radarr layout
   ansible.builtin.file:
     path: "{{ item }}"
@@ -9,6 +15,7 @@
   loop:
     - /opt/radarr
     - /opt/radarr/config
+  when: radarr_enabled | bool
 
 - name: Ensure movies media subdir exists (HDD, via storage bind)
   ansible.builtin.file:
@@ -17,6 +24,7 @@
     owner: "{{ radarr_puid }}"
     group: "{{ radarr_pgid }}"
     mode: "0755"
+  when: radarr_enabled | bool
 
 - name: Template .env
   ansible.builtin.template:
@@ -27,6 +35,7 @@
     mode: "0600"
   no_log: true
   notify: Swap radarr service
+  when: radarr_enabled | bool
 
 - name: Deploy docker-compose.yml
   ansible.builtin.copy:
@@ -36,6 +45,7 @@
     group: root
     mode: "0644"
   notify: Swap radarr service
+  when: radarr_enabled | bool
 
 - name: Bring up Radarr stack
   community.docker.docker_compose_v2:
@@ -43,3 +53,4 @@
     state: present
     pull: policy
     recreate: never
+  when: radarr_enabled | bool

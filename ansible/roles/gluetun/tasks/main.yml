@@ -3,6 +3,12 @@
 # qBittorrent + Prowlarr share this container's netns, so gluetun MUST be
 # healthy before they come up (their compose uses condition: service_healthy).
 
+- name: Tear down gluetun stack (disabled)
+  community.docker.docker_compose_v2:
+    project_src: /opt/gluetun
+    state: absent
+  when: not (gluetun_enabled | bool)
+
 - name: Ensure Mullvad WireGuard secret present
   # Private key is slurped in site.yml pre_tasks. If the secret file is
   # missing, the slurp defaults it to empty — fail loudly here before we
@@ -17,6 +23,7 @@
         sudo install -m 0400 -T /dev/stdin /etc/homelab/secrets/mullvad_wireguard_addresses
       (Paste the PrivateKey and Address values from Mullvad's WG config page.)
   no_log: true
+  when: gluetun_enabled | bool
 
 - name: Ensure /opt/gluetun layout
   ansible.builtin.file:
@@ -27,6 +34,7 @@
     mode: "0755"
   loop:
     - /opt/gluetun
+  when: gluetun_enabled | bool
 
 - name: Template .env
   ansible.builtin.template:
@@ -37,6 +45,7 @@
     mode: "0600"
   no_log: true
   notify: Swap gluetun stack
+  when: gluetun_enabled | bool
 
 - name: Deploy docker-compose.yml
   ansible.builtin.copy:
@@ -46,6 +55,7 @@
     group: root
     mode: "0644"
   notify: Swap gluetun stack
+  when: gluetun_enabled | bool
 
 - name: Bring up gluetun stack
   # First-deploy safety net. `recreate: never` avoids tearing down a healthy
@@ -58,3 +68,4 @@
     recreate: never
     wait: true
     wait_timeout: 90
+  when: gluetun_enabled | bool

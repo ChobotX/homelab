@@ -1,4 +1,8 @@
 ---
+# Set to false to tear down the gluetun stack (gluetun + qbit + prowlarr +
+# flaresolverr). The role still runs but only executes compose down.
+gluetun_enabled: true
+
 # Gluetun — VPN sidecar running Mullvad WireGuard. qBittorrent + Prowlarr share
 # this container's netns (network_mode: service:gluetun) so ALL their traffic
 # — torrent peers, tracker announces, indexer queries, DNS — exits through

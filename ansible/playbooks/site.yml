@@ -194,20 +194,22 @@
     # gluetun role owns the single compose project that brings up all three
     # services (one project required for service:gluetun + healthy-gate).
     # Order: dirs first, then compose-up.
-    # TEMP DISABLED (Mullvad unpaid -> gluetun healthcheck fails CI). Re-enable when VPN restored.
-    # flaresolverr shares gluetun's compose netns so it is disabled with the group; bazarr left active.
-    # - role: qbittorrent
-    #   tags: [qbittorrent, media, services]
-    # - role: prowlarr
-    #   tags: [prowlarr, media, services]
-    # - role: flaresolverr
-    #   tags: [flaresolverr, media, services]
-    # - role: gluetun
-    #   tags: [gluetun, vpn, media, services]
-    # - role: sonarr
-    #   tags: [sonarr, media, services]
-    # - role: radarr
-    #   tags: [radarr, media, services]
+    # TEMP DISABLED (Mullvad unpaid). Set *_enabled: true when VPN restored.
+    # qbittorrent + prowlarr + flaresolverr live in gluetun's compose project —
+    # their dir-creation roles are skipped while gluetun_enabled is false
+    # (dirs already exist on-host, no drift risk).
+    - role: gluetun
+      tags: [gluetun, vpn, media, services]
+      vars:
+        gluetun_enabled: false
+    - role: sonarr
+      tags: [sonarr, media, services]
+      vars:
+        sonarr_enabled: false
+    - role: radarr
+      tags: [radarr, media, services]
+      vars:
+        radarr_enabled: false
     - role: bazarr
       tags: [bazarr, media, services]
     - role: n8n

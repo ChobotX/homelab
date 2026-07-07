@@ -1,4 +1,10 @@
 ---
+- name: Tear down Sonarr stack (disabled)
+  community.docker.docker_compose_v2:
+    project_src: /opt/sonarr
+    state: absent
+  when: not (sonarr_enabled | bool)
+
 - name: Ensure /opt/sonarr layout
   ansible.builtin.file:
     path: "{{ item }}"
@@ -9,6 +15,7 @@
   loop:
     - /opt/sonarr
     - /opt/sonarr/config
+  when: sonarr_enabled | bool
 
 - name: Ensure TV media subdir exists (HDD, via storage bind)
   ansible.builtin.file:
@@ -17,6 +24,7 @@
     owner: "{{ sonarr_puid }}"
     group: "{{ sonarr_pgid }}"
     mode: "0755"
+  when: sonarr_enabled | bool
 
 - name: Template .env
   ansible.builtin.template:
@@ -27,6 +35,7 @@
     mode: "0600"
   no_log: true
   notify: Swap sonarr service
+  when: sonarr_enabled | bool
 
 - name: Deploy docker-compose.yml
   ansible.builtin.copy:
@@ -36,6 +45,7 @@
     group: root
     mode: "0644"
   notify: Swap sonarr service
+  when: sonarr_enabled | bool
 
 - name: Bring up Sonarr stack
   community.docker.docker_compose_v2:
@@ -43,3 +53,4 @@
     state: present
     pull: policy
     recreate: never
+  when: sonarr_enabled | bool

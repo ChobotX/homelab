@@ -1,4 +1,6 @@
 ---
+sonarr_enabled: true
+
 # Sonarr — TV library manager. Direct internet access (TMDB/TheTVDB metadata
 # only — harmless to the homelab IP). Talks to Prowlarr and qBittorrent via
 # gluetun's arr-network container IP on the docker bridge, never over WAN.
