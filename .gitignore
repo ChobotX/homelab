@@ -50,3 +50,4 @@ venv/
 # Editor / agent local state
 .claude/
 .cursor/
+.mcp.json
