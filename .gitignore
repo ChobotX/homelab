@@ -31,6 +31,10 @@ ansible/.vault_key
 ansible/host_vars/*/vars.yml
 ansible/host_vars/*/vault.yml
 
+# ESPHome
+esphome/secrets.yaml
+esphome/.esphome/
+
 # Local / dev
 .vagrant/
 .DS_Store
