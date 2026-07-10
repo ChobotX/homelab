@@ -8,5 +8,5 @@
 # transfers as unmetered when alwaysLocalNet covers this CIDR).
 #
 # Leave undefined to disable LAN-IP bindings — services then stay WG-only.
-homelab_lan_ip: 192.168.1.118
+homelab_lan_ip: 192.168.1.104
 homelab_lan_subnet: 192.168.1.0/24
