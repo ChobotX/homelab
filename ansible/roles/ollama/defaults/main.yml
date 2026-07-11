@@ -6,6 +6,12 @@ ollama_image: "ollama/ollama:0.21.1@sha256:cd33c5656285ca365c9c5495fe0240a70aef6
 # internal-only on the `proxy` network; n8n reaches it via DNS name `ollama`.
 ollama_host: "ollama.{{ homelab_domain }}"
 
+# Home Assistant (HAOS Pi, 10.8.0.7) reaches the inference API directly at
+# http://10.8.0.6:11434 over WireGuard — its Ollama conversation agent powers
+# the voice pipeline. Publish 11434 bound to the wg0 IP only; LAN/WAN stay
+# closed. Dropping this breaks voice intent recognition on the satellite.
+ollama_wg_bind_ip: "10.8.0.6"
+
 # Models the role should `ollama pull` after the container is up. Pull is
 # idempotent — an already-present model is a no-op. Override per host in
 # host_vars when GPU VRAM changes (4b-it-qat on P2000 5G → 12b-it-qat on
@@ -30,6 +36,7 @@ ollama_models:
   - gemma3:4b-it-qat                      # fast fallback — 3 GiB, ~27 tok/s
   - hollis9/czellama3                     # 4.7 GiB — Llama 3 CZ fine-tune
   - jobautomation/OpenEuroLLM-Czech       # 8.1 GiB — Gemma 3 CZ (EU consortium); CPU-offload on P2000
+  - qwen3:4b-q4_K_M                       # 2.6 GiB — HA voice assistant conversation agent
 
 # Keep the last-loaded model resident instead of unloading after 5min idle.
 # Avoids cold-start latency on sporadic n8n webhook traffic — 4b weights

@@ -1,7 +1,8 @@
 ---
 # Ollama — local LLM inference.
-# Backend-only on the `proxy` network — no Traefik router, no host ports.
-# Other containers reach it via DNS name `ollama:11434`. Adding a UI (e.g.
+# Backend-only on the `proxy` network — no Traefik router, no LAN/WAN ports.
+# Other containers reach it via DNS name `ollama:11434`; Home Assistant (over
+# WireGuard) via the wg0-bound published port below. Adding a UI (e.g.
 # OpenWebUI) later means adding Traefik labels + wg-only@file gate then.
 services:
   ollama:
@@ -29,6 +30,10 @@ services:
 {% endif %}
     volumes:
       - ${OLLAMA_MODELS_ROOT}:/root/.ollama
+    ports:
+      # HA voice pipeline (Ollama conversation agent on HAOS, 10.8.0.7) dials
+      # this over WireGuard. Bound to the wg0 IP only — not LAN/WAN-exposed.
+      - "{{ ollama_wg_bind_ip }}:11434:11434"
     networks:
       - proxy
 {% if nvidia_gpu_enabled | default(false) | bool %}
