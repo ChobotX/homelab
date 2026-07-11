@@ -38,6 +38,12 @@ ollama_models:
   - jobautomation/OpenEuroLLM-Czech       # 8.1 GiB — Gemma 3 CZ (EU consortium); CPU-offload on P2000
   - qwen3:4b-q4_K_M                       # 2.6 GiB — HA voice assistant conversation agent
 
+# Model to preload into VRAM on every container start (deploy recreate, crash
+# restart, host reboot) so the first HA voice command after an ollama restart
+# answers at warm speed instead of paying the ~30-40s cold model load.
+# Empty string disables the preload wrapper (stock entrypoint).
+ollama_warmup_model: "qwen3:4b-q4_K_M"
+
 # Keep the last-loaded model resident instead of unloading after 5min idle.
 # Avoids cold-start latency on sporadic n8n webhook traffic — 4b weights
 # only cost ~3 GiB VRAM. Set to "0" to disable keep-alive (free VRAM for

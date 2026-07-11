@@ -36,6 +36,26 @@ services:
       - "{{ ollama_wg_bind_ip }}:11434:11434"
     networks:
       - proxy
+{% if ollama_warmup_model %}
+    # Preload {{ ollama_warmup_model }} on every container start so the first
+    # HA voice command after a restart doesn't pay the cold model load: start
+    # the server, wait for the API, load the model with an empty prompt, keep
+    # serving. Guarded on the model already being on disk — a fresh host must
+    # not trigger a multi-GiB pull at boot (the ansible pull task owns that).
+    # trap forwards SIGTERM so graceful model eviction still happens on stop.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        /bin/ollama serve &
+        pid=$$!
+        trap 'kill -TERM "$$pid"; wait "$$pid"' TERM INT
+        until /bin/ollama list >/dev/null 2>&1; do sleep 1; done
+        if /bin/ollama list | grep -q '^{{ ollama_warmup_model }}'; then
+          /bin/ollama run {{ ollama_warmup_model }} "" >/dev/null 2>&1 || true
+        fi
+        wait "$$pid"
+{% endif %}
 {% if nvidia_gpu_enabled | default(false) | bool %}
     # Pinning the nvidia runtime (registered by the nvidia_container role in
     # daemon.json) makes the NVIDIA env vars above active at start.
