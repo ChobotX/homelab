@@ -377,14 +377,15 @@
 - name: Sync dashboard JSONs
   # No notify — Grafana's file provider auto-reloads JSON changes every
   # updateIntervalSeconds (30s). A container swap would be pure overhead.
+  # Recursive dir copy: subdirs become Grafana folders (the provider has
+  # foldersFromFilesStructure enabled).
   ansible.builtin.copy:
-    src: "{{ item }}"
+    src: dashboards/
     dest: /opt/observability/grafana/dashboards/
     owner: root
     group: "{{ observability_grafana_gid }}"
     mode: "0640"
-  with_fileglob:
-    - "dashboards/*.json"
+    directory_mode: "0750"
 
 - name: Deploy docker-compose.yml
   # Compose-file change can affect any service (network, volume, labels,
