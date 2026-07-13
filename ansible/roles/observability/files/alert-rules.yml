@@ -7,8 +7,8 @@ groups:
     rules:
       - alert: HostDiskAlmostFull
         expr: |
-          (node_filesystem_avail_bytes{mountpoint="/"}
-           / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+          (node_filesystem_avail_bytes{job="node",mountpoint="/"}
+           / node_filesystem_size_bytes{job="node",mountpoint="/"}) < 0.1
         for: 10m
         labels:
           severity: warning
@@ -60,8 +60,8 @@ groups:
 
       - alert: HostOutOfMemory
         expr: |
-          node_memory_MemAvailable_bytes
-          / node_memory_MemTotal_bytes < 0.1
+          node_memory_MemAvailable_bytes{job="node"}
+          / node_memory_MemTotal_bytes{job="node"} < 0.1
         for: 5m
         labels:
           severity: warning
@@ -71,7 +71,7 @@ groups:
       - alert: HostHighCpuLoad
         expr: |
           100 - (avg by (instance)
-                 (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+                 (rate(node_cpu_seconds_total{job="node",mode="idle"}[5m])) * 100) > 90
         for: 15m
         labels:
           severity: warning
