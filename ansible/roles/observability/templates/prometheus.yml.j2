@@ -74,6 +74,18 @@ scrape_configs:
     static_configs:
       - targets: ['{{ observability_homeassistant_wg_ip }}:12345']
 
+  # ailab (GX10, manually managed) — node + GPU exporters bound to its WG IP,
+  # scraped over WG like homeassistant-alloy above.
+  - job_name: ailab-node
+    scrape_interval: 60s
+    static_configs:
+      - targets: ['{{ observability_ailab_wg_ip }}:{{ observability_node_exporter_port }}']
+
+  - job_name: ailab-gpu
+    scrape_interval: 60s
+    static_configs:
+      - targets: ['{{ observability_ailab_wg_ip }}:{{ observability_nvidia_exporter_port }}']
+
   # Blackbox exporter self-metrics (probe duration, errors, cert info). Probe
   # jobs below hit /probe via relabel; this one hits /metrics directly.
   - job_name: blackbox_exporter
