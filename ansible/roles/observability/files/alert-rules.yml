@@ -231,6 +231,69 @@ groups:
         annotations:
           summary: "RPi CPU on HA is {{ $value }}°C — approaching throttle range, act now"
 
+  - name: ailab
+    interval: 1m
+    rules:
+      - alert: AilabDown
+        # node_exporter on ailab unreachable over WG — box off, WG tunnel down,
+        # or exporter dead. Warning only: deliberate power-off is routine.
+        expr: up{job="ailab-node"} == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ailab scrape target down for {{ $value | humanizeDuration }}"
+
+      - alert: AilabGpuExporterDown
+        # GPU exporter down while the node itself is up — exporter or driver
+        # problem, not power/tunnel (that's AilabDown).
+        expr: up{job="ailab-gpu"} == 0 and up{job="ailab-node"} == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ailab GPU exporter down while host is up — check nvidia_gpu_exporter/driver"
+
+      - alert: AilabHighCpuLoad
+        # 30m window — training runs pegging CPU for a while are normal.
+        expr: |
+          100 - (avg by (instance)
+                 (rate(node_cpu_seconds_total{job="ailab-node",mode="idle"}[5m])) * 100) > 90
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ailab CPU {{ $value | printf \"%.0f\" }}% sustained for 30m"
+
+      - alert: AilabOutOfMemory
+        expr: |
+          node_memory_MemAvailable_bytes{job="ailab-node"}
+          / node_memory_MemTotal_bytes{job="ailab-node"} < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ailab memory <10% available"
+
+      - alert: AilabDiskAlmostFull
+        expr: |
+          (node_filesystem_avail_bytes{job="ailab-node",mountpoint="/"}
+           / node_filesystem_size_bytes{job="ailab-node",mountpoint="/"}) < 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ailab root filesystem <10% free"
+          description: "{{ $value | humanizePercentage }} free"
+
+      - alert: AilabGpuHot
+        expr: nvidia_smi_temperature_gpu{job="ailab-gpu"} > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ailab GPU at {{ $value }}°C sustained >85°C — check cooling"
+
   - name: certs
     interval: 1m
     rules:
