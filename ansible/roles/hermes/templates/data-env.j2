@@ -5,7 +5,8 @@
 # gateway then denies all Discord users / fails LLM auth until the file is
 # populated, which is the intended fail-closed behaviour.
 
-MISTRAL_API_KEY={{ mistral_api_key }}
+# LiteLLM key (alias "hermes") — per-service usage tracking on ailab.
+HERMES_LLM_API_KEY={{ hermes_llm_api_key }}
 
 # Tavily key — Hermes web extract_backend (search stays on free ddgs).
 TAVILY_API_KEY={{ hermes_tavily_key }}

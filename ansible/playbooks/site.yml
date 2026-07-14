@@ -74,12 +74,13 @@
       # consumed client-side by .mcp.json (not by Ansible).
       - trilium_password
       - trilium_etapi_token
-      # Hermes agent — Mistral LLM key, Discord bot token, and a dedicated
-      # Home Assistant long-lived token (own HA user, so it's auditable +
-      # revocable independently). Installed on-host out of band; the hermes
-      # role reuses trilium_etapi_token for notes access. Missing files render
-      # empty → the agent fails closed (denies Discord users / LLM auth fails).
-      - mistral_api_key
+      # Hermes agent — LiteLLM key (alias "hermes", ailab qwen3-coder), Discord
+      # bot token, and a dedicated Home Assistant long-lived token (own HA
+      # user, so it's auditable + revocable independently). Installed on-host
+      # out of band; the hermes role reuses trilium_etapi_token for notes
+      # access. Missing files render empty → the agent fails closed (denies
+      # Discord users / LLM auth fails).
+      - hermes_llm_api_key
       - hermes_discord_token
       - homeassistant_hermes_token
       # Hermes dashboard basic-auth — plaintext (for the human login) + scrypt

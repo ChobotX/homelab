@@ -6,7 +6,7 @@ model:
   default: "{{ hermes_model }}"
   provider: custom
   base_url: "{{ hermes_llm_base_url }}"
-  api_key: "${MISTRAL_API_KEY}"
+  api_key: "${HERMES_LLM_API_KEY}"
 
 # Fully autonomous: NO approval prompts. This is acceptable ONLY because the
 # container is the security boundary (no docker.sock, no host FS beyond
