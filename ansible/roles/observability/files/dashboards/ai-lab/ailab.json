@@ -265,8 +265,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "avg by (label) (node_hwmon_temp_celsius{job=\"ailab-node\",chip=~\".*coretemp.*\",sensor!~\"temp1|temp0\"} * on (chip, sensor) group_left(label) node_hwmon_sensor_label{job=\"ailab-node\"})",
-          "legendFormat": "{{label}}",
+          "expr": "avg(node_hwmon_temp_celsius{job=\"ailab-node\",chip=~\".*thermal_zone.*\"})",
+          "legendFormat": "SoC avg",
           "refId": "A"
         }
       ]
@@ -377,7 +377,7 @@
         "defaults": {
           "unit": "watt",
           "min": 0,
-          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "stacking": { "mode": "normal" } }
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
         }
       },
       "options": {
@@ -390,18 +390,6 @@
           "expr": "nvidia_smi_power_draw_watts{job=\"ailab-gpu\"}",
           "legendFormat": "GPU",
           "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(node_rapl_package_joules_total{job=\"ailab-node\"}[5m]))",
-          "legendFormat": "CPU (RAPL)",
-          "refId": "B"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(node_rapl_dram_joules_total{job=\"ailab-node\"}[5m]))",
-          "legendFormat": "DRAM (RAPL)",
-          "refId": "C"
         }
       ]
     }
