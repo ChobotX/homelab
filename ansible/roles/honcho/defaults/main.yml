@@ -12,7 +12,7 @@ honcho_host: "honcho.{{ homelab_domain }}"
 
 # Same LiteLLM endpoint hermes uses; separate key = separate usage bucket.
 honcho_llm_base_url: "http://10.8.0.9:4000/v1"
-honcho_llm_model: "qwen3-coder"
+honcho_llm_model: "qwen3.5"
 
 # Embeddings — qwen3-coder can't embed, so ailab serves Qwen3-Embedding-0.6B
 # (second llama-server instance behind the same LiteLLM). 1024-dim vectors.
