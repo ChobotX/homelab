@@ -141,6 +141,9 @@ while IFS= read -r f; do
     ansible/roles/hermes/*)        hermes=true ;;
     # mistral_proxy is hermes-coupled — deploy it via the hermes job/tag.
     ansible/roles/mistral_proxy/*) hermes=true ;;
+    # honcho (memory backend) is hermes-coupled the same way — its role tags
+    # include `hermes`, so the hermes job's --tags picks it up.
+    ansible/roles/honcho/*)        hermes=true ;;
     ansible/roles/homepage/*)      hp=true ;;
     ansible/roles/backup/*)        backup=true ;;
   esac
