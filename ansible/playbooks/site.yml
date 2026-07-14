@@ -31,6 +31,7 @@
 #   trilium        → notes (TriliumNext, SQLite) + ETAPI behind Traefik (WG-only)
 #   ollama         → local LLM inference (GPU), backend-only on proxy network
 #   mistral_proxy  → nginx rate-limit shim before hermes (paces Mistral 4 rpm)
+#   honcho         → self-hosted memory backend for hermes (LLM via ailab)
 #   hermes         → autonomous AI agent, sandboxed (no docker.sock/host FS),
 #                    Discord + dashboard, scoped to loki/prom/trilium/HA
 #   homepage       → signpost page at home.<homelab_domain> (links + live widgets)
@@ -81,6 +82,10 @@
       # access. Missing files render empty → the agent fails closed (denies
       # Discord users / LLM auth fails).
       - hermes_llm_api_key
+      # Honcho memory backend — its own LiteLLM key (alias "honcho") so
+      # memory-pipeline usage is tracked apart from the agent's. The pg
+      # password (honcho_db_password) is self-minted by the role, not listed.
+      - honcho_llm_api_key
       - hermes_discord_token
       - homeassistant_hermes_token
       # Hermes dashboard basic-auth — plaintext (for the human login) + scrypt
@@ -225,6 +230,10 @@
     # runs before hermes so the agent's base_url resolves on first start.
     - role: mistral_proxy
       tags: [mistral_proxy, hermes, ai, services]
+    # Honcho — self-hosted memory backend for hermes (api on the hermes net).
+    # Before hermes so http://honcho:8000 resolves on the agent's first start.
+    - role: honcho
+      tags: [honcho, hermes, ai, services]
     # Autonomous AI agent — runs AFTER trilium/observability/traefik so its
     # scoped targets (trilium ETAPI, loki/prometheus, the hermes net + Traefik
     # ingress) already exist. Sandboxed: no docker.sock, no host FS, off proxy.

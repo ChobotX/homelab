@@ -1,0 +1,9 @@
+# Managed by Ansible — mode 0600. Runtime env for honcho api + deriver.
+DB_CONNECTION_URI=postgresql+psycopg://honcho:{{ honcho_db_password }}@honcho-db:5432/honcho
+CACHE_URL=redis://honcho-redis:6379/0?suppress=true
+CACHE_ENABLED=true
+
+# LiteLLM key (alias "honcho") — honcho's own usage bucket on ailab. The
+# openai transport reads this; per-module base_url overrides in config.toml
+# point every module at LiteLLM instead of api.openai.com.
+LLM_OPENAI_API_KEY={{ honcho_llm_api_key }}

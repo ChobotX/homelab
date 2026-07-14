@@ -1,0 +1,86 @@
+---
+# Self-mint the pg password if absent — same posture as trilium's web-login
+# password. `creates:` makes it idempotent.
+- name: Ensure honcho db password exists on target
+  ansible.builtin.shell: |
+    set -euo pipefail
+    install -m 0400 -o root -g root -T \
+      <(tr -dc 'A-Za-z0-9' </dev/urandom | head -c {{ honcho_db_password_length }}) \
+      /etc/homelab/secrets/honcho_db_password
+  args:
+    executable: /bin/bash
+    creates: /etc/homelab/secrets/honcho_db_password
+
+- name: Read honcho db password from target
+  ansible.builtin.slurp:
+    src: /etc/homelab/secrets/honcho_db_password
+  register: honcho_db_password_slurp
+  no_log: true
+
+- name: Set honcho_db_password fact
+  ansible.builtin.set_fact:
+    honcho_db_password: "{{ (honcho_db_password_slurp.content | b64decode).strip() }}"
+  no_log: true
+
+- name: Ensure /opt/honcho layout
+  ansible.builtin.file:
+    path: /opt/honcho
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Template compose-interpolation .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: /opt/honcho/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart honcho stack
+
+- name: Template runtime env (honcho.env)
+  ansible.builtin.template:
+    src: honcho-env.j2
+    dest: /opt/honcho/honcho.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart honcho stack
+
+- name: Template config.toml
+  ansible.builtin.template:
+    src: config.toml.j2
+    dest: /opt/honcho/config.toml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart honcho stack
+
+- name: Deploy init.sql (pgvector extension)
+  ansible.builtin.copy:
+    src: init.sql
+    dest: /opt/honcho/init.sql
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: /opt/honcho/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart honcho stack
+
+- name: Bring up honcho stack
+  # First-deploy safety net. `recreate: never` leaves running containers
+  # untouched on compose/config changes so the handler owns every swap.
+  community.docker.docker_compose_v2:
+    project_src: /opt/honcho
+    state: present
+    pull: policy
+    recreate: never

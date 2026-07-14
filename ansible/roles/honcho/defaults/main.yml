@@ -1,0 +1,20 @@
+---
+# Honcho (plastic-labs) — self-hosted memory backend for the Hermes agent.
+# API + deriver share one image over an internal pg/redis pair; all LLM and
+# embedding calls go to ailab's LiteLLM (WG host routing) with a dedicated
+# key (honcho_llm_api_key secret) so honcho's usage is tracked separately
+# from hermes'. No content leaves the WG mesh.
+#
+# Pinned by tag + digest; pull is by digest so the tag is cosmetic.
+honcho_image: "ghcr.io/plastic-labs/honcho:v3.0.12@sha256:1e9dbc40136d3f9213ce7482b0eecac914b630ee3e714ea961bd763945f94be5"
+
+# Same LiteLLM endpoint hermes uses; separate key = separate usage bucket.
+honcho_llm_base_url: "http://10.8.0.9:4000/v1"
+honcho_llm_model: "qwen3-coder"
+
+# Embeddings — qwen3-coder can't embed, so ailab serves Qwen3-Embedding-0.6B
+# (second llama-server instance behind the same LiteLLM). 1024-dim vectors.
+honcho_embedding_model: "qwen3-embedding"
+honcho_embedding_dimensions: 1024
+
+honcho_db_password_length: 48

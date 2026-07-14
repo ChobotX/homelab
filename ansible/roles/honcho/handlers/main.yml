@@ -1,0 +1,10 @@
+---
+- name: Restart honcho stack
+  ansible.builtin.command:
+    chdir: /opt/honcho
+    # --force-recreate so mounted config/env changes actually trigger a
+    # restart (compose sees no service-spec diff otherwise). Scoped to the
+    # app containers — pg/redis only change via compose-spec diffs, which
+    # `up` handles without the force.
+    cmd: docker compose up -d --wait --force-recreate honcho honcho-deriver
+  changed_when: true

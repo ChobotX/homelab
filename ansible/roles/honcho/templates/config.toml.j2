@@ -1,0 +1,73 @@
+# Managed by Ansible — honcho config (mounted read-only at /app/config.toml).
+# Only deviations from honcho's defaults live here: every LLM-calling module
+# is pointed at ailab's LiteLLM (qwen3-coder for text, qwen3-embedding for
+# vectors). The API key comes from LLM_OPENAI_API_KEY in honcho.env; auth
+# stays off (network-scoped, see docker-compose.yml).
+
+[app]
+EMBED_MESSAGES = true
+
+[embedding]
+VECTOR_DIMENSIONS = {{ honcho_embedding_dimensions }}
+
+[embedding.model_config]
+transport = "openai"
+model = "{{ honcho_embedding_model }}"
+[embedding.model_config.overrides]
+base_url = "{{ honcho_llm_base_url }}"
+
+[deriver.model_config]
+transport = "openai"
+model = "{{ honcho_llm_model }}"
+[deriver.model_config.overrides]
+base_url = "{{ honcho_llm_base_url }}"
+
+[summary.model_config]
+transport = "openai"
+model = "{{ honcho_llm_model }}"
+[summary.model_config.overrides]
+base_url = "{{ honcho_llm_base_url }}"
+
+# All dialectic reasoning levels ride the same single model — the levels
+# still differ by tool-iteration/output budgets from honcho's defaults.
+[dialectic.levels.minimal.model_config]
+transport = "openai"
+model = "{{ honcho_llm_model }}"
+[dialectic.levels.minimal.model_config.overrides]
+base_url = "{{ honcho_llm_base_url }}"
+
+[dialectic.levels.low.model_config]
+transport = "openai"
+model = "{{ honcho_llm_model }}"
+[dialectic.levels.low.model_config.overrides]
+base_url = "{{ honcho_llm_base_url }}"
+
+[dialectic.levels.medium.model_config]
+transport = "openai"
+model = "{{ honcho_llm_model }}"
+[dialectic.levels.medium.model_config.overrides]
+base_url = "{{ honcho_llm_base_url }}"
+
+[dialectic.levels.high.model_config]
+transport = "openai"
+model = "{{ honcho_llm_model }}"
+[dialectic.levels.high.model_config.overrides]
+base_url = "{{ honcho_llm_base_url }}"
+
+[dialectic.levels.max.model_config]
+transport = "openai"
+model = "{{ honcho_llm_model }}"
+[dialectic.levels.max.model_config.overrides]
+base_url = "{{ honcho_llm_base_url }}"
+
+[dream.deduction_model_config]
+transport = "openai"
+model = "{{ honcho_llm_model }}"
+[dream.deduction_model_config.overrides]
+base_url = "{{ honcho_llm_base_url }}"
+
+[dream.induction_model_config]
+transport = "openai"
+model = "{{ honcho_llm_model }}"
+[dream.induction_model_config.overrides]
+base_url = "{{ honcho_llm_base_url }}"

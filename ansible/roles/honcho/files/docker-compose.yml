@@ -1,0 +1,106 @@
+---
+# Honcho memory backend — API + deriver worker + pgvector + redis.
+#
+# Reach: the API joins the `hermes` net so the agent hits http://honcho:8000
+# by docker DNS. Nothing publishes host ports — pg/redis live on the project
+# net only, unreachable from other stacks and the LAN. Auth stays off in
+# honcho itself; the network scope is the boundary (same posture as trilium's
+# ETAPI on the hermes net).
+#
+# Egress: api + deriver call ailab's LiteLLM at 10.8.0.9:4000 through host
+# routing (same path hermes uses for Home Assistant).
+services:
+  honcho:
+    image: ${HONCHO_IMAGE}
+    container_name: honcho
+    restart: unless-stopped
+    entrypoint: ["sh", "docker/entrypoint.sh"]
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      honcho-db:
+        condition: service_healthy
+      honcho-redis:
+        condition: service_healthy
+    env_file:
+      - ./honcho.env
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+    networks:
+      - honcho
+      - hermes
+    healthcheck:
+      test:
+        - CMD
+        - /app/.venv/bin/python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  honcho-deriver:
+    image: ${HONCHO_IMAGE}
+    container_name: honcho-deriver
+    restart: unless-stopped
+    entrypoint: ["/app/.venv/bin/python", "-m", "src.deriver"]
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      honcho:
+        condition: service_healthy
+    env_file:
+      - ./honcho.env
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+    networks:
+      - honcho
+
+  honcho-db:
+    image: pgvector/pgvector:pg15
+    container_name: honcho-db
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=200"]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: honcho
+      POSTGRES_USER: honcho
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pgdata:/var/lib/postgresql/data/
+    networks:
+      - honcho
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honcho -d honcho"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  honcho-redis:
+    image: redis:8.2
+    container_name: honcho-redis
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - redis-data:/data
+    networks:
+      - honcho
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  redis-data:
+
+networks:
+  honcho:
+  hermes:
+    external: true
