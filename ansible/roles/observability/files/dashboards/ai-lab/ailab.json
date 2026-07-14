@@ -211,9 +211,70 @@
       ]
     },
     {
+      "type": "timeseries",
+      "title": "CPU utilization",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 12 },
+      "id": 10,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "100 - (avg(rate(node_cpu_seconds_total{job=\"ailab-node\",mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "total",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU temperature",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 12 },
+      "id": 11,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 75 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "avg by (label) (node_hwmon_temp_celsius{job=\"ailab-node\",chip=~\".*coretemp.*\",sensor!~\"temp1|temp0\"} * on (chip, sensor) group_left(label) node_hwmon_sensor_label{job=\"ailab-node\"})",
+          "legendFormat": "{{label}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "type": "row",
       "title": "GPU",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 12 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
       "id": 200,
       "collapsed": false,
       "panels": []
@@ -222,7 +283,7 @@
       "type": "timeseries",
       "title": "GPU utilization",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 13 },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 19 },
       "id": 6,
       "fieldConfig": {
         "defaults": {
@@ -249,12 +310,13 @@
       "type": "timeseries",
       "title": "GPU memory",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 13 },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 19 },
       "id": 7,
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
+          "unit": "percent",
           "min": 0,
+          "max": 100,
           "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
         }
       },
@@ -265,15 +327,9 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "nvidia_smi_memory_used_bytes{job=\"ailab-gpu\"}",
-          "legendFormat": "used",
+          "expr": "nvidia_smi_utilization_memory_ratio{job=\"ailab-gpu\"} * 100",
+          "legendFormat": "VRAM %",
           "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "nvidia_smi_memory_total_bytes{job=\"ailab-gpu\"}",
-          "legendFormat": "total",
-          "refId": "B"
         }
       ]
     },
@@ -281,7 +337,7 @@
       "type": "timeseries",
       "title": "GPU temperature",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 19 },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 25 },
       "id": 8,
       "fieldConfig": {
         "defaults": {
@@ -313,15 +369,15 @@
     },
     {
       "type": "timeseries",
-      "title": "GPU power draw",
+      "title": "Power draw",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 19 },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 25 },
       "id": 9,
       "fieldConfig": {
         "defaults": {
           "unit": "watt",
           "min": 0,
-          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "stacking": { "mode": "normal" } }
         }
       },
       "options": {
@@ -332,8 +388,20 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "nvidia_smi_power_draw_watts{job=\"ailab-gpu\"}",
-          "legendFormat": "power",
+          "legendFormat": "GPU",
           "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(node_rapl_package_joules_total{job=\"ailab-node\"}[5m]))",
+          "legendFormat": "CPU (RAPL)",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(node_rapl_dram_joules_total{job=\"ailab-node\"}[5m]))",
+          "legendFormat": "DRAM (RAPL)",
+          "refId": "C"
         }
       ]
     }
