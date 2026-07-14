@@ -8,6 +8,12 @@ model:
   base_url: "{{ hermes_llm_base_url }}"
   api_key: "${HERMES_LLM_API_KEY}"
 
+# Cross-session memory — self-hosted Honcho (honcho role, same docker net).
+# Connection + identity live in honcho.json (seeded next to this file); the
+# local baseUrl there makes the plugin skip API-key auth.
+memory:
+  provider: honcho
+
 # Fully autonomous: NO approval prompts. This is acceptable ONLY because the
 # container is the security boundary (no docker.sock, no host FS beyond
 # /opt/data, scoped docker nets). The agent can do anything inside the

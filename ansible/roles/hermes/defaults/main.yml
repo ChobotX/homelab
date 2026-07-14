@@ -58,6 +58,13 @@ hermes_jq_sha256: "5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8
 # force reinstall (mirrors the seed-once config pattern).
 hermes_ddgs_version: "9.14.4"
 
+# Honcho memory plugin — the `honcho-ai` SDK is vendored into data/pylib the
+# same way as ddgs (imported in-process, must survive recreate). The honcho
+# server itself is the honcho role's stack; hermes reaches it at
+# http://honcho:8000 over the hermes net (local URL = no API key needed).
+hermes_honcho_ai_version: "2.2.0"
+hermes_honcho_user_peer: "ondrej"
+
 # Bind-mounted to /opt/data (Hermes' data + config dir). Node-based image runs
 # as uid 1000 — pre-own so first boot can't leave config root-owned.
 hermes_data_dir: /opt/hermes/data

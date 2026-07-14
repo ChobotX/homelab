@@ -61,6 +61,23 @@
   when: not hermes_config_stat.stat.exists
   notify: Swap hermes service
 
+# Same seed-once contract as config.yaml: the honcho plugin rewrites this
+# file itself (oauth rotation, wizard edits), so Hermes owns it after seeding.
+- name: Check for existing Honcho plugin config
+  ansible.builtin.stat:
+    path: "{{ hermes_data_dir }}/honcho.json"
+  register: hermes_honcho_json_stat
+
+- name: Seed Honcho plugin config (first converge only)
+  ansible.builtin.template:
+    src: honcho.json.j2
+    dest: "{{ hermes_data_dir }}/honcho.json"
+    owner: "{{ hermes_data_uid }}"
+    group: "{{ hermes_data_uid }}"
+    mode: "0640"
+  when: not hermes_honcho_json_stat.stat.exists
+  notify: Swap hermes service
+
 - name: Template Hermes runtime secrets (.env)
   ansible.builtin.template:
     src: data-env.j2
@@ -120,4 +137,26 @@
         --disable-pip-version-check --target /opt/data/pylib
         ddgs=={{ hermes_ddgs_version }}
   when: not hermes_ddgs_stat.stat.exists
+  notify: Swap hermes service
+
+# Same vendoring pattern for the honcho-ai SDK (memory plugin import).
+- name: Check for vendored honcho-ai package
+  ansible.builtin.stat:
+    path: "{{ hermes_data_dir }}/pylib/honcho"
+  register: hermes_honcho_ai_stat
+
+- name: Vendor honcho-ai into the bind-mounted pylib
+  community.docker.docker_container_exec:
+    container: hermes
+    user: "{{ hermes_data_uid }}"
+    argv:
+      - /bin/sh
+      - -c
+      - >-
+        curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py &&
+        python3 /tmp/get-pip.py --quiet --no-cache-dir --target /tmp/pipboot &&
+        PYTHONPATH=/tmp/pipboot python3 -m pip install --no-cache-dir
+        --disable-pip-version-check --target /opt/data/pylib --upgrade
+        honcho-ai=={{ hermes_honcho_ai_version }}
+  when: not hermes_honcho_ai_stat.stat.exists
   notify: Swap hermes service
