@@ -8,6 +8,8 @@
 # Pinned by tag + digest; pull is by digest so the tag is cosmetic.
 honcho_image: "ghcr.io/plastic-labs/honcho:v3.0.12@sha256:1e9dbc40136d3f9213ce7482b0eecac914b630ee3e714ea961bd763945f94be5"
 
+honcho_host: "honcho.{{ homelab_domain }}"
+
 # Same LiteLLM endpoint hermes uses; separate key = separate usage bucket.
 honcho_llm_base_url: "http://10.8.0.9:4000/v1"
 honcho_llm_model: "qwen3-coder"

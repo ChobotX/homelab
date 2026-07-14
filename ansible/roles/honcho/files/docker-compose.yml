@@ -39,6 +39,20 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    # WG-only ingress so off-box agents (pi on the Mac) reach the same memory.
+    # Honcho itself runs with auth off — the wg-only middleware IS the auth
+    # boundary, identical trust to the docker-net path hermes uses.
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "hermes"
+
+      traefik.http.routers.honcho.rule: "Host(`${HONCHO_HOST}`)"
+      traefik.http.routers.honcho.entrypoints: "websecure"
+      traefik.http.routers.honcho.tls: "true"
+      traefik.http.routers.honcho.tls.certresolver: "cloudflare"
+      traefik.http.routers.honcho.service: "honcho"
+      traefik.http.routers.honcho.middlewares: "wg-only@file,security-headers@file"
+      traefik.http.services.honcho.loadbalancer.server.port: "8000"
 
   honcho-deriver:
     image: ${HONCHO_IMAGE}
