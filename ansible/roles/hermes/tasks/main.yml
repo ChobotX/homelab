@@ -9,7 +9,7 @@
   loop:
     - { path: /opt/hermes, owner: root }
     # Bind-mounted to /opt/data (config.yaml, .env, memory, skills, sessions).
-    # Pre-own to the node uid so a first-boot race can't leave config root-owned.
+    # Pre-own to the app uid so a first-boot race can't leave config root-owned.
     - { path: "{{ hermes_data_dir }}", owner: "{{ hermes_data_uid }}" }
 
 - name: Ensure agent bin dir (bind-mounted, prepended to PATH via .env)
@@ -120,7 +120,7 @@
 - name: Vendor ddgs into the bind-mounted pylib
   community.docker.docker_container_exec:
     container: hermes
-    # Run as the node uid so the files land owned by 1000 (the dir is its own).
+    # Run as the app uid so the files land owned by it (the dir is its own).
     user: "{{ hermes_data_uid }}"
     # The image ships python3 + curl but NOT pip. Bootstrap pip from the
     # self-contained get-pip.py into an ephemeral /tmp dir, then use it to

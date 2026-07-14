@@ -65,10 +65,11 @@ hermes_ddgs_version: "9.14.4"
 hermes_honcho_ai_version: "2.2.0"
 hermes_honcho_user_peer: "ondrej"
 
-# Bind-mounted to /opt/data (Hermes' data + config dir). Node-based image runs
-# as uid 1000 — pre-own so first boot can't leave config root-owned.
+# Bind-mounted to /opt/data (Hermes' data + config dir). The image's app
+# processes run as user `hermes` (uid 10000) — seeds must be owned by it or
+# the agent can't read them (bit us with honcho.json).
 hermes_data_dir: /opt/hermes/data
-hermes_data_uid: "1000"
+hermes_data_uid: "10000"
 
 # Discord allowlist — set per-host in /etc/homelab/config.yml (host-truth, not
 # git), slurped as play vars on every converge. Empty here = fail closed: the
