@@ -76,6 +76,34 @@
     mode: "0644"
   notify: Restart honcho stack
 
+# Documented self-host bootstrap (see scripts/configure_embeddings.py):
+# migrations create the default vector(1536) schema, configure_embeddings
+# ALTERs it to the configured dim, and only then may the api start — its
+# startup validator refuses on a schema/config dim mismatch. All three
+# steps are idempotent no-ops on later converges.
+- name: Bring up honcho datastores (migrations need them)
+  community.docker.docker_compose_v2:
+    project_src: /opt/honcho
+    state: present
+    pull: policy
+    recreate: never
+    wait: true
+    services:
+      - honcho-db
+      - honcho-redis
+
+- name: Run honcho database migrations
+  ansible.builtin.command:
+    chdir: /opt/honcho
+    cmd: docker compose run --rm --no-deps --entrypoint "/app/.venv/bin/python scripts/provision_db.py" honcho
+  changed_when: false
+
+- name: Align pgvector dims with the configured embedding model
+  ansible.builtin.command:
+    chdir: /opt/honcho
+    cmd: docker compose run --rm --no-deps --entrypoint "/app/.venv/bin/python scripts/configure_embeddings.py --yes" honcho
+  changed_when: false
+
 - name: Bring up honcho stack
   # First-deploy safety net. `recreate: never` leaves running containers
   # untouched on compose/config changes so the handler owns every swap.
