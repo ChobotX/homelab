@@ -8,6 +8,16 @@ model:
   base_url: "{{ hermes_llm_base_url }}"
   api_key: "${HERMES_LLM_API_KEY}"
 
+# Context-length override: LiteLLM's /models reports no limits, so Hermes
+# would fall back to its 200k default; llama-server serves the full window.
+providers:
+  ailab:
+    base_url: "{{ hermes_llm_base_url }}"
+    api_key: "${HERMES_LLM_API_KEY}"
+    models:
+      {{ hermes_model }}:
+        context_length: {{ hermes_model_context_length }}
+
 # Cross-session memory — self-hosted Honcho (honcho role, same docker net).
 # Connection + identity live in honcho.json (seeded next to this file); the
 # local baseUrl there makes the plugin skip API-key auth.

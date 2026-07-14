@@ -19,6 +19,9 @@ hermes_host: "hermes.{{ homelab_domain }}"
 # no longer referenced here.
 hermes_model: "qwen3-coder"
 hermes_llm_base_url: "http://10.8.0.9:4000/v1"
+# LiteLLM's /models reports no context length, so Hermes would fall back to
+# its 200k default; llama-server on ailab actually serves the full 262144.
+hermes_model_context_length: 262144
 
 # Autonomous-run circuit breaker — cap iterations per conversation so a
 # runaway tool loop can't hog the single ailab inference slot unbounded.
