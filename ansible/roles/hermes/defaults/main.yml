@@ -17,7 +17,7 @@ hermes_host: "hermes.{{ homelab_domain }}"
 # enforces the per-service API key (hermes_llm_api_key secret) and tracks
 # usage per key. Previous Mistral path (mistral_proxy shim) left in place but
 # no longer referenced here.
-hermes_model: "qwen3-coder"
+hermes_model: "qwen3.5"
 hermes_llm_base_url: "http://10.8.0.9:4000/v1"
 # LiteLLM's /models reports no context length, so Hermes would fall back to
 # its 200k default; llama-server on ailab actually serves the full 262144.
