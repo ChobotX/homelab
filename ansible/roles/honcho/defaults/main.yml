@@ -14,7 +14,7 @@ honcho_host: "honcho.{{ homelab_domain }}"
 honcho_llm_base_url: "http://10.8.0.9:4000/v1"
 honcho_llm_model: "qwen3.5"
 
-# Embeddings — qwen3-coder can't embed, so ailab serves Qwen3-Embedding-0.6B
+# Embeddings — the chat model can't embed, so ailab serves Qwen3-Embedding-0.6B
 # (second llama-server instance behind the same LiteLLM). 1024-dim vectors.
 honcho_embedding_model: "qwen3-embedding"
 honcho_embedding_dimensions: 1024

@@ -1,6 +1,6 @@
 # Managed by Ansible — honcho config (mounted read-only at /app/config.toml).
 # Only deviations from honcho's defaults live here: every LLM-calling module
-# is pointed at ailab's LiteLLM (qwen3-coder for text, qwen3-embedding for
+# is pointed at ailab's LiteLLM ({{ honcho_llm_model }} for text, qwen3-embedding for
 # vectors). The API key comes from LLM_OPENAI_API_KEY in honcho.env; auth
 # stays off (network-scoped, see docker-compose.yml).
 
