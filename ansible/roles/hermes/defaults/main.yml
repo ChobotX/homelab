@@ -12,19 +12,18 @@ hermes_image: "nousresearch/hermes-agent:latest@sha256:39ce97f831e423408d85ccf7a
 
 hermes_host: "hermes.{{ homelab_domain }}"
 
-# LLM: Qwen3-Coder-Next 80B served by ailab (llama-server behind LiteLLM on
-# the WG mesh, reached through host routing like Home Assistant). LiteLLM
+# LLM: Nemotron-3-Super-120B-A12B NVFP4 served by ailab (vLLM behind LiteLLM
+# on the WG mesh, reached through host routing like Home Assistant). LiteLLM
 # enforces the per-service API key (hermes_llm_api_key secret) and tracks
-# usage per key. Previous Mistral path (mistral_proxy shim) left in place but
-# no longer referenced here.
-hermes_model: "qwen3.5"
+# usage per key.
+hermes_model: "nemotron-super-120b"
 hermes_llm_base_url: "http://10.8.0.9:4000/v1"
 # LiteLLM's /models reports no context length, so Hermes would fall back to
-# its 200k default; llama-server on ailab actually serves the full 262144.
+# its 200k default; vLLM on ailab serves 262144 (2 slots × 256k context).
 hermes_model_context_length: 262144
 
 # Autonomous-run circuit breaker — cap iterations per conversation so a
-# runaway tool loop can't hog the single ailab inference slot unbounded.
+# runaway tool loop can't burn through vLLM slots unbounded.
 hermes_max_turns: 90
 
 # API retry headroom. Kept at 5 (was the default 3) from the Mistral rate-limit
