@@ -12,7 +12,7 @@ honcho_host: "honcho.{{ homelab_domain }}"
 
 # Same LiteLLM endpoint hermes uses; separate key = separate usage bucket.
 honcho_llm_base_url: "http://10.8.0.9:4000/v1"
-honcho_llm_model: "nemotron-super-120b"
+honcho_llm_model: "thinkingcap-qwen3.6-27b-nothink"
 
 # Embeddings — the chat model can't embed, so ailab serves Qwen3-Embedding-0.6B
 # (llama-embed.service behind the same LiteLLM). 1024-dim vectors.

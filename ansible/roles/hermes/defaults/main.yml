@@ -12,14 +12,14 @@ hermes_image: "nousresearch/hermes-agent:latest@sha256:39ce97f831e423408d85ccf7a
 
 hermes_host: "hermes.{{ homelab_domain }}"
 
-# LLM: Nemotron-3-Super-120B-A12B NVFP4 served by ailab (vLLM behind LiteLLM
+# LLM: ThinkingCap-Qwen3.6-27B Q8_0 served by ailab (llama.cpp behind LiteLLM
 # on the WG mesh, reached through host routing like Home Assistant). LiteLLM
 # enforces the per-service API key (hermes_llm_api_key secret) and tracks
-# usage per key.
-hermes_model: "nemotron-super-120b"
+# usage per key. -nothink alias: thinking disabled for chat latency.
+hermes_model: "thinkingcap-qwen3.6-27b-nothink"
 hermes_llm_base_url: "http://10.8.0.9:4000/v1"
 # LiteLLM's /models reports no context length, so Hermes would fall back to
-# its 200k default; vLLM on ailab serves 262144 (2 slots × 256k context).
+# its 200k default; llama-server on ailab serves 4 slots × 256k context.
 hermes_model_context_length: 262144
 
 # Autonomous-run circuit breaker — cap iterations per conversation so a
