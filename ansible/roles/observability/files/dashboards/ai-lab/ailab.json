@@ -503,7 +503,7 @@
     },
     {
       "type": "timeseries",
-      "title": "KV cache tokens (capacity 1048576)",
+      "title": "Largest slot context (per-slot cap 262144)",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 38 },
       "id": 23,
@@ -511,8 +511,16 @@
         "defaults": {
           "unit": "short",
           "min": 0,
-          "max": 1048576,
-          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+          "max": 262144,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 196608 },
+              { "color": "red", "value": 245760 }
+            ]
+          }
         }
       },
       "options": {
@@ -522,8 +530,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "llamacpp:tokens_cached{job=\"ailab-llm\"}",
-          "legendFormat": "KV tokens",
+          "expr": "llamacpp:n_tokens_max{job=\"ailab-llm\"}",
+          "legendFormat": "max slot tokens",
           "refId": "A"
         }
       ]
