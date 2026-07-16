@@ -39,7 +39,7 @@ WantedBy=multi-user.target
 EOF
 
 # don't restart mid-request
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   BUSY=$(curl -sf --max-time 2 http://127.0.0.1:8080/metrics 2>/dev/null | awk '$1=="llamacpp:requests_processing"{print $2}')
   [ "${BUSY:-0}" = "0" ] && break
   sleep 2
@@ -48,7 +48,7 @@ done
 systemctl daemon-reload
 systemctl restart llama-server
 
-for i in $(seq 1 90); do
+for _ in $(seq 1 90); do
   if curl -sf --max-time 2 http://127.0.0.1:8080/health >/dev/null 2>&1; then
     echo "HEALTHY after restart with flags: ${FLAGS}"
     journalctl -u llama-server -n 200 --no-pager | grep -E "n_slots|n_ctx_slot|kv_unified|flash_attn|n_ubatch" | tail -5 || true
