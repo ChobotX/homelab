@@ -266,14 +266,16 @@ groups:
           summary: "ailab CPU {{ $value | printf \"%.0f\" }}% sustained for 30m"
 
       - alert: AilabOutOfMemory
+        # vLLM + Nemotron NVFP4 intentionally uses ~120/128GB unified memory;
+        # <1% (~1GB free) is normal steady state, alert only on real exhaustion.
         expr: |
           node_memory_MemAvailable_bytes{job="ailab-node"}
-          / node_memory_MemTotal_bytes{job="ailab-node"} < 0.1
+          / node_memory_MemTotal_bytes{job="ailab-node"} < 0.005
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "ailab memory <10% available"
+          summary: "ailab memory <0.5% available ({{ $value | humanizePercentage }})"
 
       - alert: AilabDiskAlmostFull
         expr: |
