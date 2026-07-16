@@ -86,6 +86,13 @@ scrape_configs:
     static_configs:
       - targets: ['{{ observability_ailab_wg_ip }}:{{ observability_nvidia_exporter_port }}']
 
+  # llama-server /metrics via socket proxy on ailab (llama-metrics.socket).
+  # Shorter interval — slot/queue state moves fast under load.
+  - job_name: ailab-llm
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['{{ observability_ailab_wg_ip }}:{{ observability_ailab_llm_port }}']
+
   # Blackbox exporter self-metrics (probe duration, errors, cert info). Probe
   # jobs below hit /probe via relabel; this one hits /metrics directly.
   - job_name: blackbox_exporter

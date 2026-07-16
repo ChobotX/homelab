@@ -296,6 +296,16 @@ groups:
         annotations:
           summary: "ailab GPU at {{ $value }}°C sustained >85°C — check cooling"
 
+      - alert: AilabLlmQueueBacklog
+        # Requests queued behind all 4 llama-server slots for a sustained
+        # period — server saturated, clients see multi-minute first-byte.
+        expr: llamacpp:requests_deferred{job="ailab-llm"} > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ailab llama-server has {{ $value }} queued request(s) for 10m+ — slots saturated"
+
   - name: certs
     interval: 1m
     rules:

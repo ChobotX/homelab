@@ -27,6 +27,9 @@ observability_homeassistant_wg_ip: "10.8.0.7"
 # ailab (GX10) WG IP — node_exporter + nvidia_gpu_exporter bind this address,
 # scraped over WG. Host is manually managed, not in ansible.
 observability_ailab_wg_ip: "10.8.0.9"
+# llama-server metrics, proxied to the WG IP by a systemd socket proxy on
+# ailab (llama-metrics.socket → 127.0.0.1:8080).
+observability_ailab_llm_port: 9105
 
 # Container resource caps (single-host budget).
 observability_grafana_mem_limit: "256m"
