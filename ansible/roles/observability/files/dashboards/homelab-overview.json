@@ -68,7 +68,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "expr": "100 - (avg(rate(node_cpu_seconds_total{job=\"node\",mode=\"idle\"}[5m])) * 100)",
           "refId": "A"
         }
       ]
@@ -104,7 +104,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "avg((1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100)",
+          "expr": "avg((1 - node_memory_MemAvailable_bytes{job=\"node\"} / node_memory_MemTotal_bytes{job=\"node\"}) * 100)",
           "refId": "A"
         }
       ]
@@ -143,13 +143,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "max((1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}) * 100)",
+          "expr": "max((1 - node_filesystem_avail_bytes{job=\"node\",mountpoint=\"/\"} / node_filesystem_size_bytes{job=\"node\",mountpoint=\"/\"}) * 100)",
           "legendFormat": "SSD (/)",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "max((1 - node_filesystem_avail_bytes{mountpoint=\"/mnt/elements\"} / node_filesystem_size_bytes{mountpoint=\"/mnt/elements\"}) * 100)",
+          "expr": "max((1 - node_filesystem_avail_bytes{job=\"node\",mountpoint=\"/mnt/elements\"} / node_filesystem_size_bytes{job=\"node\",mountpoint=\"/mnt/elements\"}) * 100)",
           "legendFormat": "HDD (/mnt/elements)",
           "refId": "B"
         }
@@ -187,7 +187,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "max(nvidia_smi_utilization_gpu_ratio) * 100",
+          "expr": "max(nvidia_smi_utilization_gpu_ratio{job=\"nvidia_gpu\"}) * 100",
           "refId": "A"
         }
       ]
@@ -217,7 +217,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "max(time() - node_boot_time_seconds)",
+          "expr": "max(time() - node_boot_time_seconds{job=\"node\"})",
           "refId": "A"
         }
       ]
@@ -573,7 +573,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "label_replace(label_replace(avg by (cpu) ((1 - rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100), \"cpu_pad\", \"0$1\", \"cpu\", \"^([0-9])$\"), \"cpu_pad\", \"$1\", \"cpu\", \"^([0-9]{2})$\")",
+          "expr": "label_replace(label_replace(avg by (cpu) ((1 - rate(node_cpu_seconds_total{job=\"node\",mode=\"idle\"}[5m])) * 100), \"cpu_pad\", \"0$1\", \"cpu\", \"^([0-9])$\"), \"cpu_pad\", \"$1\", \"cpu\", \"^([0-9]{2})$\")",
           "legendFormat": "cpu{{cpu_pad}}",
           "refId": "A"
         }
@@ -597,7 +597,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "avg by (label) (node_hwmon_temp_celsius{chip=~\".*coretemp.*\",sensor!~\"temp1|temp0\"} * on (chip, sensor) group_left(label) node_hwmon_sensor_label)",
+          "expr": "avg by (label) (node_hwmon_temp_celsius{job=\"node\",chip=~\".*coretemp.*\",sensor!~\"temp1|temp0\"} * on (chip, sensor) group_left(label) node_hwmon_sensor_label{job=\"node\"})",
           "legendFormat": "{{label}}",
           "refId": "A"
         }
@@ -620,19 +620,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "nvidia_smi_utilization_gpu_ratio",
+          "expr": "nvidia_smi_utilization_gpu_ratio{job=\"nvidia_gpu\"}",
           "legendFormat": "GPU",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "nvidia_smi_utilization_memory_ratio",
+          "expr": "nvidia_smi_utilization_memory_ratio{job=\"nvidia_gpu\"}",
           "legendFormat": "VRAM bw",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "nvidia_smi_memory_used_bytes / nvidia_smi_memory_total_bytes",
+          "expr": "nvidia_smi_memory_used_bytes{job=\"nvidia_gpu\"} / nvidia_smi_memory_total_bytes{job=\"nvidia_gpu\"}",
           "legendFormat": "VRAM fill",
           "refId": "C"
         }
@@ -661,7 +661,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "nvidia_smi_temperature_gpu",
+          "expr": "nvidia_smi_temperature_gpu{job=\"nvidia_gpu\"}",
           "legendFormat": "GPU",
           "refId": "A"
         }
@@ -688,19 +688,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(node_rapl_package_joules_total[5m]))",
+          "expr": "sum(rate(node_rapl_package_joules_total{job=\"node\"}[5m]))",
           "legendFormat": "CPU pkg",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(node_rapl_dram_joules_total[5m]))",
+          "expr": "sum(rate(node_rapl_dram_joules_total{job=\"node\"}[5m]))",
           "legendFormat": "DRAM",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(nvidia_smi_power_draw_watts)",
+          "expr": "sum(nvidia_smi_power_draw_watts{job=\"nvidia_gpu\"})",
           "legendFormat": "GPU",
           "refId": "C"
         }
@@ -732,25 +732,25 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(node_disk_read_bytes_total{device!~\"sdb|loop.*|dm-.*|sr.*|zram.*|fd.*\"}[$__rate_interval]))",
+          "expr": "sum(rate(node_disk_read_bytes_total{job=\"node\",device!~\"sdb|loop.*|dm-.*|sr.*|zram.*|fd.*\"}[$__rate_interval]))",
           "legendFormat": "SSD read",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(node_disk_written_bytes_total{device!~\"sdb|loop.*|dm-.*|sr.*|zram.*|fd.*\"}[$__rate_interval]))",
+          "expr": "sum(rate(node_disk_written_bytes_total{job=\"node\",device!~\"sdb|loop.*|dm-.*|sr.*|zram.*|fd.*\"}[$__rate_interval]))",
           "legendFormat": "SSD write",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(node_disk_read_bytes_total{device=\"sdb\"}[$__rate_interval]))",
+          "expr": "sum(rate(node_disk_read_bytes_total{job=\"node\",device=\"sdb\"}[$__rate_interval]))",
           "legendFormat": "HDD read",
           "refId": "C"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(node_disk_written_bytes_total{device=\"sdb\"}[$__rate_interval]))",
+          "expr": "sum(rate(node_disk_written_bytes_total{job=\"node\",device=\"sdb\"}[$__rate_interval]))",
           "legendFormat": "HDD write",
           "refId": "D"
         }
@@ -782,13 +782,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(node_network_receive_bytes_total{device!~\"lo|docker.*|br-.*|veth.*|wg.*|tap.*\"}[$__rate_interval]) * 8",
+          "expr": "rate(node_network_receive_bytes_total{job=\"node\",device!~\"lo|docker.*|br-.*|veth.*|wg.*|tap.*\"}[$__rate_interval]) * 8",
           "legendFormat": "{{device}} download",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(node_network_transmit_bytes_total{device!~\"lo|docker.*|br-.*|veth.*|wg.*|tap.*\"}[$__rate_interval]) * 8",
+          "expr": "rate(node_network_transmit_bytes_total{job=\"node\",device!~\"lo|docker.*|br-.*|veth.*|wg.*|tap.*\"}[$__rate_interval]) * 8",
           "legendFormat": "{{device}} upload",
           "refId": "B"
         }
